@@ -1,0 +1,32 @@
+{"time":"2026-06-22T11:30:58.209369+05:30","level":"INFO","msg":"stream: starting","core version":"0.23.1"}
+{"time":"2026-06-22T11:30:58.783152+05:30","level":"INFO","msg":"stream: created new stream","id":"r64wg4gn"}
+{"time":"2026-06-22T11:30:58.783385+05:30","level":"INFO","msg":"handler: started","stream_id":"r64wg4gn"}
+{"time":"2026-06-22T11:30:58.783409+05:30","level":"INFO","msg":"writer: started","stream_id":"r64wg4gn"}
+{"time":"2026-06-22T11:30:58.783587+05:30","level":"INFO","msg":"stream: started","id":"r64wg4gn"}
+{"time":"2026-06-22T11:30:58.783691+05:30","level":"INFO","msg":"sender: started","stream_id":"r64wg4gn"}
+{"time":"2026-06-22T11:31:14.32035+05:30","level":"WARN","msg":"tensorboard: no root directory","error":"timed out after 10s"}
+{"time":"2026-06-22T11:31:14.32045+05:30","level":"INFO","msg":"tensorboard: tracking new log directory","rootDir":{},"logDir":"LocalOrCloudPath(LocalPath=\"/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_5\")","namespace":""}
+{"time":"2026-06-22T11:31:14.322205+05:30","level":"INFO","msg":"tensorboard: saving file","fileLocation":"/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_5/events.out.tfevents.1782108064.Charithas-MacBook-Air.local.3459.0","runPath":"outputs/logs/PPO_5/events.out.tfevents.1782108064.Charithas-MacBook-Air.local.3459.0"}
+{"time":"2026-06-22T11:41:29.476944+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":258}
+{"time":"2026-06-22T11:41:29.478451+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":2}
+{"time":"2026-06-22T12:14:59.956463+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":990}
+{"time":"2026-06-22T12:14:59.956593+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":13}
+{"time":"2026-06-22T12:19:05.054104+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1122}
+{"time":"2026-06-22T12:19:05.05423+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":10}
+{"time":"2026-06-22T12:25:50.22509+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1293}
+{"time":"2026-06-22T12:25:50.225266+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":17}
+{"time":"2026-06-22T12:36:40.499427+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1504}
+{"time":"2026-06-22T12:36:40.499608+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":17}
+{"time":"2026-06-22T12:44:40.680282+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1722}
+{"time":"2026-06-22T12:44:40.680498+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":22}
+{"time":"2026-06-22T12:58:41.036885+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":2021}
+{"time":"2026-06-22T12:58:41.037058+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":22}
+{"time":"2026-06-22T13:10:46.326591+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":2352}
+{"time":"2026-06-22T13:10:46.326726+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":10}
+{"time":"2026-06-22T13:14:11.368363+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":2433}
+{"time":"2026-06-22T13:14:11.369098+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":17}
+{"time":"2026-06-22T13:23:37.258814+05:30","level":"INFO","msg":"stream: closing","id":"r64wg4gn"}
+{"time":"2026-06-22T13:23:38.645849+05:30","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-06-22T13:23:39.187171+05:30","level":"INFO","msg":"handler: closed","stream_id":"r64wg4gn"}
+{"time":"2026-06-22T13:23:39.187545+05:30","level":"INFO","msg":"sender: closed","stream_id":"r64wg4gn"}
+{"time":"2026-06-22T13:23:39.187594+05:30","level":"INFO","msg":"stream: closed","id":"r64wg4gn"}

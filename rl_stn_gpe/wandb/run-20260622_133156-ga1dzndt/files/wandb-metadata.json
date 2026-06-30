@@ -1,0 +1,32 @@
+{
+  "os": "macOS-15.5-arm64-arm-64bit",
+  "python": "CPython 3.10.19",
+  "startedAt": "2026-06-22T08:01:56.646621Z",
+  "program": "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/train.py",
+  "codePath": "train.py",
+  "codePathLocal": "train.py",
+  "email": "charithapalika@gmail.com",
+  "root": "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe",
+  "host": "Charithas-MacBook-Air.local",
+  "executable": "/opt/homebrew/anaconda3/envs/workbench/bin/python",
+  "cpu_count": 10,
+  "cpu_count_logical": 10,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "196522426368"
+    }
+  },
+  "memory": {
+    "total": "17179869184"
+  },
+  "apple": {
+    "name": "Apple M4",
+    "ecpuCores": 6,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 16,
+    "ramTotalBytes": "17179869184"
+  },
+  "writerId": "gjzd3hg19acgsvb5s281c4p4qsfetx0y"
+}

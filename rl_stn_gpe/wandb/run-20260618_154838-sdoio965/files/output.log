@@ -1,0 +1,122 @@
+Using cpu device
+Logging to /Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_2
+----------------------------------
+| env/               |           |
+|    H               | 0.364     |
+|    R               | 0.688     |
+|    beta            | 94.7      |
+|    pulse           | 0         |
+|    r_beta          | -0.649    |
+|    r_entropy       | -0.679    |
+|    r_stim          | 0         |
+|    r_sync          | -2.42     |
+| rollout/           |           |
+|    ep_len_mean     | 1e+03     |
+|    ep_rew_mean     | -2.99e+03 |
+| time/              |           |
+|    fps             | 28        |
+|    iterations      | 1         |
+|    time_elapsed    | 71        |
+|    total_timesteps | 2048      |
+----------------------------------
+Exception in thread Thread-2:
+Traceback (most recent call last):
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 244, in run
+    self._run()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 275, in _run
+    self._record_writer.write(data)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/record_writer.py", line 40, in write
+    self._writer.write(header + header_crc + data + footer_crc)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 775, in write
+    self.fs.append(self.filename, file_content, self.binary_mode)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 167, in append
+    self._write(filename, file_content, "ab" if binary_mode else "a")
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 171, in _write
+    with io.open(filename, mode, encoding=encoding) as f:
+FileNotFoundError: [Errno 2] No such file or directory: b'/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_2/events.out.tfevents.1781777924.Charithas-MacBook-Air.local.9461.0'
+Traceback (most recent call last):
+  File "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/train.py", line 178, in <module>
+    main()
+  File "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/train.py", line 168, in main
+    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/ppo/ppo.py", line 311, in learn
+    return super().learn(
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/on_policy_algorithm.py", line 335, in learn
+    self.dump_logs(iteration)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/on_policy_algorithm.py", line 298, in dump_logs
+    self.logger.dump(step=self.num_timesteps)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/logger.py", line 542, in dump
+    _format.write(self.name_to_value, self.name_to_excluded, step)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/logger.py", line 415, in write
+    self.writer.add_scalar(key, value, step)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/torch/utils/tensorboard/writer.py", line 386, in add_scalar
+    self._get_file_writer().add_summary(summary, global_step, walltime)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/torch/utils/tensorboard/writer.py", line 116, in add_summary
+    self.add_event(event, global_step, walltime)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/torch/utils/tensorboard/writer.py", line 100, in add_event
+    self.event_writer.add_event(event)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 117, in add_event
+    self._async_writer.write(event.SerializeToString())
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 178, in write
+    self._check_worker_status()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 212, in _check_worker_status
+    raise exception
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 244, in run
+    self._run()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 275, in _run
+    self._record_writer.write(data)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/record_writer.py", line 40, in write
+    self._writer.write(header + header_crc + data + footer_crc)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 775, in write
+    self.fs.append(self.filename, file_content, self.binary_mode)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 167, in append
+    self._write(filename, file_content, "ab" if binary_mode else "a")
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 171, in _write
+    with io.open(filename, mode, encoding=encoding) as f:
+FileNotFoundError: [Errno 2] No such file or directory: b'/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_2/events.out.tfevents.1781777924.Charithas-MacBook-Air.local.9461.0'
+Traceback (most recent call last):
+  File "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/train.py", line 178, in <module>
+    main()
+  File "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/train.py", line 168, in main
+    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/ppo/ppo.py", line 311, in learn
+    return super().learn(
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/on_policy_algorithm.py", line 335, in learn
+    self.dump_logs(iteration)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/on_policy_algorithm.py", line 298, in dump_logs
+    self.logger.dump(step=self.num_timesteps)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/logger.py", line 542, in dump
+    _format.write(self.name_to_value, self.name_to_excluded, step)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/stable_baselines3/common/logger.py", line 415, in write
+    self.writer.add_scalar(key, value, step)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/torch/utils/tensorboard/writer.py", line 386, in add_scalar
+    self._get_file_writer().add_summary(summary, global_step, walltime)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/torch/utils/tensorboard/writer.py", line 116, in add_summary
+    self.add_event(event, global_step, walltime)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/torch/utils/tensorboard/writer.py", line 100, in add_event
+    self.event_writer.add_event(event)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 117, in add_event
+    self._async_writer.write(event.SerializeToString())
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 178, in write
+    self._check_worker_status()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 212, in _check_worker_status
+    raise exception
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 244, in run
+    self._run()
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/event_file_writer.py", line 275, in _run
+    self._record_writer.write(data)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/summary/writer/record_writer.py", line 40, in write
+    self._writer.write(header + header_crc + data + footer_crc)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 775, in write
+    self.fs.append(self.filename, file_content, self.binary_mode)
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 167, in append
+    self._write(filename, file_content, "ab" if binary_mode else "a")
+  File "/opt/homebrew/anaconda3/envs/workbench/lib/python3.10/site-packages/tensorboard/compat/tensorflow_stub/io/gfile.py", line 171, in _write
+    with io.open(filename, mode, encoding=encoding) as f:
+FileNotFoundError: [Errno 2] No such file or directory: b'/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_2/events.out.tfevents.1781777924.Charithas-MacBook-Air.local.9461.0'

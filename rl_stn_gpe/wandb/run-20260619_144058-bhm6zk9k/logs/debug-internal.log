@@ -1,0 +1,60 @@
+{"time":"2026-06-19T14:40:58.74006+05:30","level":"INFO","msg":"stream: starting","core version":"0.23.1"}
+{"time":"2026-06-19T14:40:59.362673+05:30","level":"INFO","msg":"stream: created new stream","id":"bhm6zk9k"}
+{"time":"2026-06-19T14:40:59.363114+05:30","level":"INFO","msg":"handler: started","stream_id":"bhm6zk9k"}
+{"time":"2026-06-19T14:40:59.36316+05:30","level":"INFO","msg":"stream: started","id":"bhm6zk9k"}
+{"time":"2026-06-19T14:40:59.363177+05:30","level":"INFO","msg":"writer: started","stream_id":"bhm6zk9k"}
+{"time":"2026-06-19T14:40:59.363393+05:30","level":"INFO","msg":"sender: started","stream_id":"bhm6zk9k"}
+{"time":"2026-06-19T14:41:14.812956+05:30","level":"WARN","msg":"tensorboard: no root directory","error":"timed out after 10s"}
+{"time":"2026-06-19T14:41:14.813058+05:30","level":"INFO","msg":"tensorboard: tracking new log directory","rootDir":{},"logDir":"LocalOrCloudPath(LocalPath=\"/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_4\")","namespace":""}
+{"time":"2026-06-19T14:41:14.815505+05:30","level":"INFO","msg":"tensorboard: saving file","fileLocation":"/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/outputs/logs/PPO_4/events.out.tfevents.1781860264.Charithas-MacBook-Air.local.4866.0","runPath":"outputs/logs/PPO_4/events.out.tfevents.1781860264.Charithas-MacBook-Air.local.4866.0"}
+{"time":"2026-06-19T14:47:54.936874+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":149}
+{"time":"2026-06-19T14:47:54.937446+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":19}
+{"time":"2026-06-19T14:51:15.019563+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":246}
+{"time":"2026-06-19T14:51:15.019709+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":12}
+{"time":"2026-06-19T14:54:35.092552+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":328}
+{"time":"2026-06-19T14:54:35.09272+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":18}
+{"time":"2026-06-19T15:02:40.221929+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":455}
+{"time":"2026-06-19T15:02:40.222166+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":20}
+{"time":"2026-06-19T15:10:07.966422+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp 34.8.250.101:443: connect: operation timed out"}
+{"time":"2026-06-19T15:15:52.950581+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp 34.8.250.101:443: connect: operation timed out"}
+{"time":"2026-06-19T15:16:40.537534+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":854}
+{"time":"2026-06-19T15:16:40.537675+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":16}
+{"time":"2026-06-19T15:24:35.686254+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":988}
+{"time":"2026-06-19T15:24:35.686347+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T15:28:55.779344+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1129}
+{"time":"2026-06-19T15:28:55.779418+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T15:36:00.927212+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1302}
+{"time":"2026-06-19T15:36:00.927282+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T15:39:36.012244+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1380}
+{"time":"2026-06-19T15:39:36.012318+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T15:52:01.325732+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1641}
+{"time":"2026-06-19T15:52:01.325817+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T15:59:11.504358+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1819}
+{"time":"2026-06-19T15:59:11.504469+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T16:02:41.585524+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":1912}
+{"time":"2026-06-19T16:02:41.585596+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T16:09:51.732899+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":2034}
+{"time":"2026-06-19T16:09:51.73298+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T16:18:01.85365+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":2258}
+{"time":"2026-06-19T16:18:01.853752+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T16:19:37.99162+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp 34.8.250.101:443: connect: operation timed out"}
+{"time":"2026-06-19T16:19:47.980799+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp 34.8.250.101:443: connect: operation timed out"}
+{"time":"2026-06-19T16:35:11.981597+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:35:14.002912+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:35:55.662264+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:35:57.743348+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:36:01.778044+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:36:24.064608+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:37:56.160339+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:37:58.237003+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:38:02.804336+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T16:38:11.385364+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T17:28:39.944436+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T18:53:45.170023+05:30","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/charitha_palika/RL%20controller/bhm6zk9k/file_stream\": dial tcp: lookup api.wandb.ai: no such host"}
+{"time":"2026-06-19T21:10:31.709586+05:30","level":"INFO","msg":"flowcontrol: backed up, offloading to disk","recordNumber":2453}
+{"time":"2026-06-19T21:10:31.709648+05:30","level":"INFO","msg":"flowcontrol: unblocked","totalOffloaded":1}
+{"time":"2026-06-19T21:24:28.716456+05:30","level":"INFO","msg":"stream: closing","id":"bhm6zk9k"}
+{"time":"2026-06-19T21:24:31.011828+05:30","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-06-19T21:24:31.625584+05:30","level":"INFO","msg":"handler: closed","stream_id":"bhm6zk9k"}
+{"time":"2026-06-19T21:24:31.625996+05:30","level":"INFO","msg":"sender: closed","stream_id":"bhm6zk9k"}
+{"time":"2026-06-19T21:24:31.62603+05:30","level":"INFO","msg":"stream: closed","id":"bhm6zk9k"}

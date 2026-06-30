@@ -1,0 +1,44 @@
+# Weights & Biases sweep for PPO hyperparameter tuning of the RL-DBS controller.
+#
+# Usage (on your machine, from the project root):
+#   wandb sweep rl_stn_gpe/sweep.yaml          # prints a SWEEP_ID
+#   wandb agent <SWEEP_ID>                      # run one or more agents
+#
+# Each trial launches train.py with the sampled hyperparameters as CLI flags.
+# Bayesian search maximises the mean episode reward (env return).
+# Keep --no-eval for speed during sweeps; shorten --timesteps for quick trials.
+
+program: rl_stn_gpe/train.py
+method: bayes
+metric:
+  name: rollout/ep_rew_mean      # SB3's mean episode reward (logged to wandb)
+  goal: maximize
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - "--no-eval"
+  - "--timesteps"
+  - "100000"
+  - ${args}
+
+parameters:
+  lr:
+    distribution: log_uniform_values
+    min: 0.00005
+    max: 0.0005
+  ent_coef:
+    distribution: log_uniform_values
+    min: 0.001
+    max: 0.05
+  batch_size:
+    values: [64, 128, 256]
+  n_steps:
+    values: [1024, 2048, 4096]
+  gamma:
+    values: [0.97, 0.99, 0.995]
+  net_arch:
+    values: ["64,64", "128,128", "256,128", "256,256"]
+  lr_schedule:
+    values: ["constant", "linear"]
