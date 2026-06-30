@@ -3,25 +3,29 @@ env.py
 ======
 Gymnasium environment wrapping the STN-GPe simulator for RL-based DBS control.
 
-Design (uniform fixed-DT model)
--------------------------------
+Design (EVENT-DRIVEN / semi-MDP for the agent)
+----------------------------------------------
 - The network integrates at dt (0.1 ms) inside STNGPeStepper. The env never
   changes that.
-- One env step == DECISION_DT_MS of biological time (default 5 ms = 50 steps).
 - reset() runs a WARMUP_S transient-removal phase (default 1 s) with NO
   stimulation. Those steps fill the rolling metric buffer but are NOT returned
   as RL steps and are not part of the episode return.
-- After warm-up, the agent decides every DECISION_DT_MS. Action 1 emits a
-  charge-balanced biphasic pulse; after a pulse, the pulse action is MASKED for
-  refractory_decisions() steps (= 1/STIM_FREQ_HZ = 50 ms => max rate 20 Hz),
-  while the env keeps stepping at DT. Skipped/masked steps inject zeros.
-- Observation and reward are computed over the trailing METRIC_WINDOW_S window
-  (rolling buffer) using rl_stn_gpe.metrics.
+- After warm-up, the AGENT decides one pulse per env step:
+    action -> (amplitude, pulse_period_ms, phase_width_ms, interphase_gap_ms)
+  The env emits ONE charge-balanced biphasic pulse at the start of the window
+  and advances the simulator by pulse_period_ms (the gap to the next pulse).
+  pulse_period_ms is bounded to [1000/MAX_FREQ_HZ, 1000/MIN_FREQ_HZ], so the
+  max-rate cap is structural. Decisions therefore span VARIABLE biological time.
+- BASELINES (none / openloop) ignore the action and advance in fixed chunks of
+  DECISION_DT_MS, exactly as before, so the std-DBS comparison stays faithful.
+- Observation = trailing-window metrics [sync, beta, entropy] + the agent's
+  previous action (normalized to [0,1]). Reward = time-scaled sync+entropy(+beta)
+  tent terms minus a per-pulse charge penalty (see rl_stn_gpe.reward).
 
-Conditions (config.CONDITIONS):
-    "agent"    -> RL controls aperiodic pulses (PD network)   [training]
-    "openloop" -> standard DBS train injected, action ignored [baseline]
-    "none"     -> no stimulation, action ignored              [normal/pd baseline]
+Action space (config.ACTION_MODE):
+    "continuous" -> Box([-1, 1]^k)               (Gaussian PPO policy)
+    "discrete"   -> MultiDiscrete([n_bins, ...]) (categorical PPO policy)
+where k = number of ENABLED params in config.ACTION_SPACE.
 
 Composition, not inheritance: the env *holds* a STNGPeStepper; the simulator
 stays a pure, reusable component. stn_gpe/ is never modified.
@@ -38,7 +42,7 @@ from rl_stn_gpe import config
 from rl_stn_gpe import metrics as M
 from rl_stn_gpe import reward as rwd
 from rl_stn_gpe.stepper import STNGPeStepper
-from rl_stn_gpe.Generate_DBS_pulse import pulse_in_window, dbs_train
+from rl_stn_gpe.Generate_DBS_pulse import biphasic_pulse, dbs_train
 
 
 class STNGPeEnv(gym.Env):
@@ -56,20 +60,72 @@ class STNGPeEnv(gym.Env):
         config.validate(self.dt)
 
         # --- timing (in integrator steps) ---
-        self.dec_steps = config.decision_steps(self.dt)                       # 50
-        self.win_steps = config.ms_to_steps(config.METRIC_WINDOW_S * 1000, self.dt)   # 10000
-        self.warmup_steps = config.ms_to_steps(config.WARMUP_S * 1000, self.dt)       # 10000
-        self.control_steps = config.ms_to_steps(config.CONTROL_S * 1000, self.dt)     # 50000
-        self.refractory_max = config.refractory_decisions()                  # 10
-        self.max_decisions = self.control_steps // self.dec_steps            # 1000
-        self.metric_every = config.METRIC_RECOMPUTE_EVERY                    # cache window metrics
+        self.dec_steps = config.decision_steps(self.dt)                              # baseline chunk
+        self.win_steps = config.ms_to_steps(config.METRIC_WINDOW_S * 1000, self.dt)
+        self.warmup_steps = config.ms_to_steps(config.WARMUP_S * 1000, self.dt)
+        self.control_steps = config.ms_to_steps(config.CONTROL_S * 1000, self.dt)
+        self.metric_every = config.METRIC_RECOMPUTE_EVERY
 
-        # --- spaces ---
-        self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(len(config.OBS_METRICS),), dtype=np.float32)
-        self.action_space = spaces.Discrete(2)
+        # --- action space (configurable: which params, continuous vs discrete) ---
+        self.mode = config.ACTION_MODE
+        self.enabled = config.enabled_params()
+        self._n_act = len(self.enabled)
+        if self.mode == "continuous":
+            self.action_space = spaces.Box(low=-1.0, high=1.0,
+                                           shape=(self._n_act,), dtype=np.float32)
+        else:  # "discrete"
+            nvec = [config.ACTION_SPACE[p]["n_bins"] for p in self.enabled]
+            self.action_space = spaces.MultiDiscrete(nvec)
+
+        # --- observation space: metrics + previous action (normalized to [0,1]) ---
+        obs_dim = len(config.OBS_METRICS) + self._n_act
+        self.observation_space = spaces.Box(low=0.0, high=1.0,
+                                            shape=(obs_dim,), dtype=np.float32)
 
         self._seed = seed
+
+    # ------------------------------------------------------------------
+    # Action decoding
+    # ------------------------------------------------------------------
+    def _u_to_value(self, name, u):
+        """Map a normalized scalar u in [0,1] to a param's physical value."""
+        if name == "pulse_period_ms":
+            if config.INTERVAL_MAP == "frequency":
+                f = config.MIN_FREQ_HZ + u * (config.MAX_FREQ_HZ - config.MIN_FREQ_HZ)
+                return 1000.0 / f                      # u=0 -> slowest, u=1 -> fastest
+            lo, hi = config.period_bounds_ms()
+            return lo + u * (hi - lo)
+        lo, hi = config.param_bounds(name)
+        return lo + u * (hi - lo)
+
+    def _decode(self, action):
+        """Decode an action into physical params + the normalized u-vector.
+
+        Returns (vals, u) where vals maps EVERY param name -> value (disabled
+        params take their default) and u is the [0,1]^k vector for the enabled
+        params (used as 'previous action' in the observation).
+        """
+        vals = {p: config.ACTION_SPACE[p]["default"] for p in config.ACTION_PARAMS}
+        u_list = []
+        if self.mode == "continuous":
+            a = np.asarray(action, dtype=float).reshape(-1)
+            for i, p in enumerate(self.enabled):
+                u = float(np.clip((a[i] + 1.0) / 2.0, 0.0, 1.0))
+                vals[p] = self._u_to_value(p, u)
+                u_list.append(u)
+        else:  # discrete
+            a = np.asarray(action).reshape(-1).astype(int)
+            for i, p in enumerate(self.enabled):
+                nb = config.ACTION_SPACE[p]["n_bins"]
+                idx = int(np.clip(a[i], 0, nb - 1))
+                u = idx / (nb - 1) if nb > 1 else 0.0
+                vals[p] = self._u_to_value(p, u)
+                u_list.append(u)
+        return vals, np.asarray(u_list, dtype=np.float32)
+
+    def _neutral_u(self):
+        """Placeholder 'previous action' (0.5) for reset / baseline conditions."""
+        return np.full(self._n_act, 0.5, dtype=np.float32)
 
     # ------------------------------------------------------------------
     def _push(self, out):
@@ -117,10 +173,11 @@ class STNGPeEnv(gym.Env):
         self.stepper = STNGPeStepper(self.params_path, seed=s)
         self.buf_spk = deque(maxlen=self.win_steps)
         self.buf_lfp = deque(maxlen=self.win_steps)
-        self.refractory = 0
         self.decision = 0
         self.n_pulses = 0
+        self.steps_done = 0           # integrator steps advanced in the control phase
         self._since_metric = 0
+        self.last_u = self._neutral_u()
         if self.record:
             self.history = {k: [] for k in ("spike_stn", "spike_gpe", "v_stn",
                                             "v_gpe", "lfp_stn", "lfp_gpe", "stim")}
@@ -148,55 +205,67 @@ class STNGPeEnv(gym.Env):
 
         # Compute and cache the initial window metrics (buffer filled by warm-up).
         self._cacheR, self._cacheBeta, self._cacheH = self._metrics()
-        obs = rwd.make_observation(self._cacheR, self._cacheBeta, self._cacheH)
+        obs = rwd.make_observation(self._cacheR, self._cacheBeta, self._cacheH,
+                                   self.last_u)
         return obs, {}
 
     # ------------------------------------------------------------------
     def step(self, action):
-        emit = False
+        nan = float("nan")
+        amp = period_ms = pw = ip = nan
+
         if self.stim_mode == "agent":
-            if int(action) == 1 and self.refractory == 0:
-                wave = pulse_in_window(
-                    self.dec_steps, config.PULSE["amplitude"],
-                    config.PULSE["phase_width_ms"], config.PULSE["interphase_ms"],
-                    self.dt, active=True)
-                emit = True
-                self.refractory = self.refractory_max
-            else:
-                wave = np.zeros(self.dec_steps)
+            vals, u = self._decode(action)
+            amp = vals["amplitude"]; period_ms = vals["pulse_period_ms"]
+            pw = vals["phase_width_ms"]; ip = vals["interphase_gap_ms"]
+            self.last_u = u
+            pulse = biphasic_pulse(amp, pw, ip, self.dt)
+            period_steps = max(config.ms_to_steps(period_ms, self.dt), len(pulse))
+            wave = np.zeros(period_steps)
+            wave[:len(pulse)] = pulse
+            advanced = period_steps
+            emit = bool(amp != 0)
+
         elif self.stim_mode == "openloop":
-            start = self.warmup_steps + self.decision * self.dec_steps
-            wave = self.dbs_full[start:start + self.dec_steps]
+            advanced = min(self.dec_steps, self.control_steps - self.steps_done)
+            start = self.warmup_steps + self.steps_done
+            wave = self.dbs_full[start:start + advanced]
             emit = bool(np.any(wave != 0))
+
         else:  # "none"
-            wave = np.zeros(self.dec_steps)
+            advanced = min(self.dec_steps, self.control_steps - self.steps_done)
+            wave = np.zeros(advanced)
+            emit = False
 
         # absolute injected charge this step (fair stim-usage metric across modes)
         stim_charge = float(np.sum(np.abs(wave)) * self.dt)
+        elapsed_ms = advanced * self.dt
 
-        out = self.stepper.step(self.dec_steps, wave)
+        out = self.stepper.step(advanced, wave)
         self._push(out)
         self._record_step(out, wave)
-
-        if self.stim_mode == "agent" and self.refractory > 0:
-            self.refractory -= 1
         if emit:
             self.n_pulses += 1
 
         # Recompute the expensive window metrics only every metric_every steps;
-        # reuse the cached value otherwise (the per-pulse penalty is exact below).
+        # reuse the cached value otherwise.
         self._since_metric += 1
         if self._since_metric >= self.metric_every:
             self._cacheR, self._cacheBeta, self._cacheH = self._metrics()
             self._since_metric = 0
         R, beta, H = self._cacheR, self._cacheBeta, self._cacheH
 
-        obs = rwd.make_observation(R, beta, H)
-        reward, breakdown = rwd.compute_reward(R, H, beta, emit)
+        obs = rwd.make_observation(R, beta, H, self.last_u)
+        reward, breakdown = rwd.compute_reward(R, H, beta, charge=stim_charge,
+                                               elapsed_ms=elapsed_ms)
 
         self.decision += 1
-        truncated = self.decision >= self.max_decisions
+        self.steps_done += advanced
+        truncated = self.steps_done >= self.control_steps
         terminated = False
         info = {"R": R, "beta": beta, "H": H, "pulse": int(emit),
-                "n_pulses": self.n_pulses, "stim_charge": stim_charge, **breakdown}
+                "n_pulses": self.n_pulses, "stim_charge": stim_charge,
+                "elapsed_ms": elapsed_ms, "amplitude": amp,
+                "pulse_period_ms": period_ms, "phase_width_ms": pw,
+                "interphase_gap_ms": ip, **breakdown}
         return obs, reward, terminated, truncated, info

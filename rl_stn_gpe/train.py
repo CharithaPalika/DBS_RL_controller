@@ -83,9 +83,11 @@ class MetricsLogger(BaseCallback):
     """
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
-        keys = ["R", "beta", "H", "pulse", "r_sync", "r_entropy", "r_beta", "r_stim"]
+        keys = ["R", "beta", "H", "pulse", "stim_charge",
+                "amplitude", "pulse_period_ms", "phase_width_ms", "interphase_gap_ms",
+                "r_sync", "r_entropy", "r_beta", "r_metric", "r_charge"]
         for k in keys:
-            vals = [i[k] for i in infos if k in i]
+            vals = [i[k] for i in infos if k in i and np.isfinite(i[k])]
             if vals:
                 self.logger.record(f"env/{k}", float(np.mean(vals)))
         return True
@@ -172,6 +174,10 @@ def main():
     if T.get("lr_schedule", "constant") == "linear":
         lr = linear_schedule(T["learning_rate"])
 
+    # gSDE (state-dependent exploration) is only valid for continuous (Box)
+    # action spaces; auto-disable it for the discrete (MultiDiscrete) mode.
+    use_sde = bool(T.get("use_sde", True)) and (config.ACTION_MODE == "continuous")
+
     model = PPO(
         T["policy"], vec_env,
         learning_rate=lr, n_steps=n_steps,
@@ -179,11 +185,13 @@ def main():
         gamma=T["gamma"], gae_lambda=T["gae_lambda"], clip_range=T["clip_range"],
         ent_coef=T["ent_coef"], vf_coef=T.get("vf_coef", 0.5),
         max_grad_norm=T.get("max_grad_norm", 0.5),
+        use_sde=use_sde,
         policy_kwargs=policy_kwargs,
         seed=T["seed"], device=device, verbose=1,
         tensorboard_log=config.LOG_DIR,
     )
-    print(f"PPO: net_arch={T['net_arch']} act={T['activation_fn']} "
+    print(f"PPO: action_mode={config.ACTION_MODE} use_sde={use_sde} "
+          f"net_arch={T['net_arch']} act={T['activation_fn']} "
           f"lr={T['learning_rate']}({T.get('lr_schedule','constant')}) "
           f"ent_coef={T['ent_coef']} batch={T['batch_size']} n_steps={n_steps} "
           f"gamma={T['gamma']} n_envs={n_envs}")
@@ -203,7 +211,8 @@ def main():
         callbacks.append(WandbCallback(model_save_path=config.CKPT_DIR, verbose=1))
 
     # --- train ---
-    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
+    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks),
+                progress_bar=True)
 
     final = os.path.join(config.CKPT_DIR, "ppo_dbs_final.zip")
     model.save(final)

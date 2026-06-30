@@ -46,32 +46,50 @@ def get_condition(name):
 
 
 # ===========================================================================
-# Control timing  (UNIFORM-STEP model)
-#   - The agent decides every DECISION_DT_MS of biological time (fixed).
-#   - DECISION_DT_MS MUST be < one pulse period (1000 / STIM_FREQ_HZ).
-#   - When a pulse fires, new pulses are blocked for one full period, i.e. for
-#     round((1000 / STIM_FREQ_HZ) / DECISION_DT_MS) decisions. This enforces the
-#     max pulse rate (<= STIM_FREQ_HZ) while letting timing be aperiodic.
+# Control timing
+#   - Baseline conditions (normal / pd / dbs) advance in fixed chunks of
+#     DECISION_DT_MS of biological time; their action is ignored.
+#   - The RL agent is EVENT-DRIVEN: each env step emits ONE biphasic pulse and
+#     advances the simulator by the agent-chosen pulse_period_ms (the gap to the
+#     next pulse). See the action-space block below.
 # ===========================================================================
-STIM_FREQ_HZ = 40       # maximum pulse rate (Hz)
-DECISION_DT_MS = 1.5 #5.0    # agent decision interval (bio ms); must be < 1000/STIM_FREQ_HZ
+DECISION_DT_MS = 1.5     # baseline chunk size (bio ms) for non-agent conditions
 
 
 # ===========================================================================
-# DBS pulse (AGENT) - charge-balanced biphasic: +amplitude for W, then
-# -amplitude for W (equal widths & opposite amplitudes => net charge = 0).
-# Widths in MS, converted to integrator steps at runtime using dt from YAML.
-# Defaults seeded from std DBS (params_std_DBS.yaml: A=250, duty 0.052 @130 Hz).
-#   width_ms default = duty * period = 0.052 * (1000/130) ~= 0.4 ms.
-# NOTE: the std-DBS 'pulseinterval' (=10) is a unitless offset multiplier inside
-# GenerateDBS.biphasicDBS, not a millisecond value, so it is NOT ported here.
-# interphase_ms is the gap between the +/- phases of the agent pulse (default 0).
-# The "dbs" (open-loop) condition still uses the YAML pulseinterval verbatim.
+# Action space (AGENT)
+# ---------------------------------------------------------------------------
+# The agent controls a charge-balanced biphasic pulse and when the NEXT pulse
+# fires. Four controllable parameters (toggle + ranges here):
+#   amplitude          +A then -A          (net injected charge = 0)
+#   pulse_period_ms    this pulse -> next pulse (= 1000 / frequency). Its range is
+#                      DERIVED from the [MIN_FREQ_HZ, MAX_FREQ_HZ] band below, so
+#                      the max-rate cap is structural -> its low/high are IGNORED.
+#   phase_width_ms     duration of EACH phase
+#   interphase_gap_ms  gap between the + and - phase WITHIN a single pulse
+#
+# ACTION_MODE:
+#   "continuous" -> Box([-1, 1]^k); env rescales each enabled dim to its range.
+#   "discrete"   -> MultiDiscrete([n_bins, ...]); env maps each bin -> a value.
+# Only ENABLED params become action dimensions; disabled ones are held at their
+# "default". Set any param's "enabled" to False to fix it; flip ACTION_MODE to
+# switch the whole space between continuous and discrete.
 # ===========================================================================
-PULSE = {
-    "amplitude": 100,        # +amplitude then -amplitude  => net charge 0 (matches std DBS)
-    "phase_width_ms": 0.2,   # per-phase width (matches std DBS)
-    "interphase_ms": 1.0,    # gap between + and - phase (matches std DBS)
+ACTION_MODE = "continuous"   # "continuous" | "discrete"
+
+# Hard frequency band of the pulse train (you set these). pulse_period_ms is
+# bounded to [1000 / MAX_FREQ_HZ, 1000 / MIN_FREQ_HZ]; the agent can never pick a
+# period shorter than 1000/MAX_FREQ_HZ, so MAX_FREQ_HZ is a structural safety cap.
+MAX_FREQ_HZ = 30        # max instantaneous pulse rate (the safety cap)
+MIN_FREQ_HZ = 5          # min rate (longest gap); lower => allows longer silences
+INTERVAL_MAP = "frequency"   # "frequency" (even Hz coverage) | "period" (even ms)
+
+ACTION_PARAMS = ["amplitude", "pulse_period_ms", "phase_width_ms", "interphase_gap_ms"]
+ACTION_SPACE = {
+    "amplitude":         {"enabled": True, "low": 0.0,  "high": 200.0, "default": 100.0, "n_bins": 11},
+    "pulse_period_ms":   {"enabled": True, "low": None, "high": None,  "default": 25.0,  "n_bins": 16},
+    "phase_width_ms":    {"enabled": True, "low": 0.1,  "high": 0.5,   "default": 0.2,   "n_bins": 5},
+    "interphase_gap_ms": {"enabled": True, "low": 0.0,  "high": 2.0,   "default": 1.0,   "n_bins": 5},
 }
 
 
@@ -81,9 +99,13 @@ PULSE = {
 # network settles and the rolling metric buffer fills; THEN the condition's
 # stimulation engages. Warmup steps are discarded from training/eval.
 # ===========================================================================
-WARMUP_S = 1.0
-CONTROL_S = 5.0
-METRIC_WINDOW_S = 1.0    # rolling window for obs/reward (in integrator steps)
+
+WARMUP_S = 0.25
+CONTROL_S = 2.0
+METRIC_WINDOW_S = 0.25   # rolling window (s) for obs/reward. Tunable: shorter =>
+                         # more responsive control + noisier metrics (the window
+                         # length is also the FFT segment, so it sets frequency
+                         # resolution: 0.25 s @10 kHz => ~4 Hz bins; 1.0 s => ~1 Hz).
 
 # Recompute the expensive window metrics (synchrony/entropy/beta) only every N
 # decisions and cache them; the per-pulse penalty is still applied every step.
@@ -116,10 +138,18 @@ OBS_NORM = {
 # beta_power is included here (lower beta = healthier). Targets/tols are tunable;
 # beta target/tol are in dB and should be recalibrated from a metrics pass.
 REWARD = {
-    "target_sync":    0.175, "tol_sync":    0.15, "w_sync":    2.0,  # lower better
-    "target_entropy": 0.70,  "tol_entropy": 0.20, "w_entropy": 1.0,  # higher better
-    "target_beta":    70.0,  "tol_beta":    15.0, "w_beta":    0.0,  # lower better (dB)
-    "lambda": 0.1,           # penalty per emitted pulse (energy / sparsity)
+    "target_sync":    0.175, "tol_sync":    0.15, "w_sync":    2.0,  # lower R better
+    "target_entropy": 0.70,  "tol_entropy": 0.20, "w_entropy": 1.0,  # higher H better
+    "target_beta":    70.0,  "tol_beta":    15.0, "w_beta":    0.0,  # lower beta better (dB)
+    # Energy cost: penalty per unit injected |charge| (covers amplitude AND phase
+    # width, since charge ~ amplitude * 2*phase_width). Seeded small; calibrate
+    # against the std-DBS total charge (~1.3e5 in the eval table). Set 0 to ignore.
+    "lambda_charge":  1e-4,
+    # Metric terms (sync + entropy + beta) are scaled by (elapsed_ms / ref_ms) so
+    # the episode return ~ the TIME-INTEGRAL of quality. This is the semi-MDP
+    # correction for variable pulse spacing: a sparse-firing policy is not
+    # penalized merely for taking fewer (longer) steps per second.
+    "ref_ms":         25.0,
     # Negative side grows with distance beyond the band (far-from-optimal is
     # punished more). neg_clip floors each term for stability; None = unbounded.
     "neg_clip": None,
@@ -139,6 +169,7 @@ TRAIN = {
     "net_arch": {"pi": [256, 128], "vf": [256, 128]},
     "activation_fn": "tanh",   # 'tanh' | 'relu' | 'elu'  (hidden-layer activation)
     "ent_coef": 0.01,        # entropy term (exploration)
+    "use_sde": True,         # gSDE smooth exploration (continuous only; auto-off if discrete)
     "learning_rate": 3e-4,
     "lr_schedule": "linear",  # 'constant' | 'linear' (decay LR to 0 over training)
     "n_steps": 2048,          # rollout length per env before each PPO update
@@ -191,24 +222,52 @@ def decision_steps(dt_ms):
     return ms_to_steps(DECISION_DT_MS, dt_ms)
 
 
-def refractory_decisions():
-    """How many decisions a pulse blocks subsequent pulses (max-rate cap)."""
-    period_ms = 1000.0 / STIM_FREQ_HZ
-    return int(round(period_ms / DECISION_DT_MS))
+def period_bounds_ms():
+    """[min, max] pulse period (ms) derived from the frequency band.
+
+    min period = 1000 / MAX_FREQ_HZ (fastest allowed rate = the safety cap),
+    max period = 1000 / MIN_FREQ_HZ (slowest allowed rate = longest gap).
+    """
+    return 1000.0 / MAX_FREQ_HZ, 1000.0 / MIN_FREQ_HZ
+
+
+def param_bounds(name):
+    """(low, high) physical range for an action param. pulse_period is DERIVED
+    from the frequency band (its YAML low/high are ignored)."""
+    if name == "pulse_period_ms":
+        return period_bounds_ms()
+    spec = ACTION_SPACE[name]
+    return spec["low"], spec["high"]
+
+
+def enabled_params():
+    """Controllable params (the action dimensions), in canonical order."""
+    return [p for p in ACTION_PARAMS if ACTION_SPACE[p]["enabled"]]
+
+
+def _max_value(name):
+    """Largest value a param can take (its high if enabled, else its default)."""
+    if ACTION_SPACE[name]["enabled"]:
+        return param_bounds(name)[1]
+    return ACTION_SPACE[name]["default"]
+
+
+def widest_pulse_ms():
+    """Longest possible single biphasic pulse: 2*phase_width + interphase_gap."""
+    return 2.0 * _max_value("phase_width_ms") + _max_value("interphase_gap_ms")
 
 
 def validate(dt_ms):
-    """Sanity-check the timing/pulse settings against the YAML dt."""
-    period_ms = 1000.0 / STIM_FREQ_HZ
-    assert DECISION_DT_MS < period_ms, (
-        f"DECISION_DT_MS ({DECISION_DT_MS}) must be < one pulse period "
-        f"({period_ms} ms = 1000/STIM_FREQ_HZ)."
-    )
-    pulse_ms = 2 * PULSE["phase_width_ms"] + PULSE["interphase_ms"]
-    assert pulse_ms <= DECISION_DT_MS, (
-        f"Pulse duration ({pulse_ms} ms) must fit within one decision step "
-        f"({DECISION_DT_MS} ms)."
-    )
+    """Sanity-check action / frequency / pulse settings against the YAML dt."""
+    assert ACTION_MODE in ("continuous", "discrete"), f"bad ACTION_MODE: {ACTION_MODE}"
+    assert INTERVAL_MAP in ("frequency", "period"), f"bad INTERVAL_MAP: {INTERVAL_MAP}"
+    assert 0 < MIN_FREQ_HZ < MAX_FREQ_HZ, (MIN_FREQ_HZ, MAX_FREQ_HZ)
+    assert enabled_params(), "No action params enabled - nothing for the agent to control."
+    period_min = 1000.0 / MAX_FREQ_HZ
+    assert period_min >= widest_pulse_ms(), (
+        f"Min pulse period ({period_min:.3f} ms = 1000/MAX_FREQ_HZ) must be >= the "
+        f"widest possible pulse ({widest_pulse_ms():.3f} ms). Lower MAX_FREQ_HZ, or "
+        f"narrow phase_width_ms / interphase_gap_ms.")
 
 
 def wandb_config(sim_params=None):
@@ -219,9 +278,12 @@ def wandb_config(sim_params=None):
     YAML dict, passed in by train.py at init time.
     """
     cfg = {
-        "stim_freq_hz": STIM_FREQ_HZ,
+        "action_mode": ACTION_MODE,
+        "max_freq_hz": MAX_FREQ_HZ,
+        "min_freq_hz": MIN_FREQ_HZ,
+        "interval_map": INTERVAL_MAP,
+        "action_space": ACTION_SPACE,
         "decision_dt_ms": DECISION_DT_MS,
-        "pulse": PULSE,
         "warmup_s": WARMUP_S,
         "control_s": CONTROL_S,
         "metric_window_s": METRIC_WINDOW_S,
