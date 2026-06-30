@@ -58,18 +58,22 @@ def rollout(condition, model, seed, time_override=None, record=False):
     env = STNGPeEnv(condition=condition, seed=seed, record=record)
     obs, _ = env.reset(seed=seed)
     if time_override is not None:
-        env.max_decisions = int(time_override) // env.dec_steps
+        env.control_steps = int(time_override)
 
-    series = {"R": [], "H": [], "beta": [], "pulse": [], "charge": []}
+    series = {"R": [], "H": [], "beta": [], "pulse": [], "charge": [],
+              "amplitude": [], "period_ms": [], "elapsed_ms": []}
     done = False
     while not done:
-        action = 0
+        action = 0       # ignored by baselines (none / openloop)
         if condition == "rl":
             action, _ = model.predict(obs, deterministic=True)
         obs, _, terminated, truncated, info = env.step(action)
         series["R"].append(info["R"]); series["H"].append(info["H"])
         series["beta"].append(info["beta"]); series["pulse"].append(info["pulse"])
         series["charge"].append(info["stim_charge"])
+        series["amplitude"].append(info["amplitude"])
+        series["period_ms"].append(info["pulse_period_ms"])
+        series["elapsed_ms"].append(info["elapsed_ms"])
         done = terminated or truncated
 
     # steady-state metrics on the final 1 s window (matches the analysis window)
@@ -79,7 +83,7 @@ def rollout(condition, model, seed, time_override=None, record=False):
                                          beta_band=config.BETA_BAND)
     rate_std = M.spike_rate(spk, binsize=env.params["binsize"])["mean_std"]
 
-    control_s = env.decision * env.dec_steps * env.dt / 1000.0
+    control_s = env.steps_done * env.dt / 1000.0
     # actual pulse count: agent counts exactly; open-loop is freq*time.
     if env.stim_mode == "agent":
         n_pulses = env.n_pulses
@@ -185,15 +189,30 @@ def save_csv(results, path):
     print(f"results CSV -> {path}")
 
 
+def _series_time_s(r):
+    """Cumulative control-phase time (s) per decision, from actual elapsed_ms
+    (decisions span variable time in the event-driven agent mode)."""
+    el = np.asarray(r["series"].get("elapsed_ms", []), dtype=float)
+    if el.size == 0:
+        return np.arange(len(r["series"]["R"])) * DT_DECISION_S
+    return (np.cumsum(el) - el[0]) / 1000.0
+
+
 def plot_comparison(results, save_path):
     conds = [r["condition"] for r in results]
     cols = [COLORS.get(c, "#555") for c in conds]
-    fig, axs = plt.subplots(2, 3, figsize=(13, 7))
-    fig.subplots_adjust(wspace=0.3, hspace=0.4, left=0.07, right=0.97,
-                        top=0.92, bottom=0.08)
+
+    # beta suppression vs the PD (untreated) baseline: positive = beta reduced.
+    pd_beta = next((r["beta_final"] for r in results if r["condition"] == "pd"),
+                   max(r["beta_final"] for r in results))
+    beta_suppr = [pd_beta - r["beta_final"] for r in results]
+
+    fig, axs = plt.subplots(2, 4, figsize=(17, 7.5))
+    fig.subplots_adjust(wspace=0.32, hspace=0.42, left=0.05, right=0.98,
+                        top=0.91, bottom=0.08)
     fig.suptitle("DBS control comparison", fontweight="bold")
 
-    # Row 0: steady-state bar charts with target lines
+    # Row 0: steady-state bar charts
     axs[0, 0].bar(conds, [r["R_final"] for r in results], color=cols)
     axs[0, 0].axhline(config.REWARD["target_sync"], ls="--", c="k", lw=1)
     axs[0, 0].set_title("Synchrony (target dashed)"); axs[0, 0].set_ylabel("R")
@@ -203,11 +222,16 @@ def plot_comparison(results, save_path):
     axs[0, 1].set_title("Spectral entropy (target dashed)")
 
     axs[0, 2].bar(conds, [r["beta_final"] for r in results], color=cols)
-    axs[0, 2].set_title("Beta power (dB)")
+    axs[0, 2].axhline(pd_beta, ls="--", c="k", lw=1)
+    axs[0, 2].set_title("Beta power (dB; PD dashed)")
 
-    # Row 1: time series of R and H, and stim-usage bar
+    # rate_std = cross-quadrant desynchronisation (higher = more desynchronised)
+    axs[0, 3].bar(conds, [r["rate_std"] for r in results], color=cols)
+    axs[0, 3].set_title("Rate std (desync; higher better)")
+
+    # Row 1: time series of R and H, beta-suppression bar, stim-usage bar
     for r in results:
-        t = np.arange(len(r["series"]["R"])) * DT_DECISION_S
+        t = _series_time_s(r)
         axs[1, 0].plot(t, r["series"]["R"], color=COLORS.get(r["condition"]),
                        label=r["condition"], lw=1)
         axs[1, 1].plot(t, r["series"]["H"], color=COLORS.get(r["condition"]),
@@ -216,8 +240,12 @@ def plot_comparison(results, save_path):
     axs[1, 0].set_ylabel("R"); axs[1, 0].legend(fontsize=8, frameon=False)
     axs[1, 1].set_title("Entropy over time"); axs[1, 1].set_xlabel("t (s)")
 
-    axs[1, 2].bar(conds, [r["total_charge"] for r in results], color=cols)
-    axs[1, 2].set_title("Stim usage (total |charge|)")
+    axs[1, 2].bar(conds, beta_suppr, color=cols)
+    axs[1, 2].axhline(0.0, c="k", lw=0.8)
+    axs[1, 2].set_title("Beta suppression vs PD (dB)")
+
+    axs[1, 3].bar(conds, [r["total_charge"] for r in results], color=cols)
+    axs[1, 3].set_title("Stim usage (total |charge|)")
 
     for ax in axs.flat:
         ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
@@ -225,6 +253,38 @@ def plot_comparison(results, save_path):
     fig.savefig(save_path, dpi=130)
     plt.close(fig)
     print(f"comparison figure -> {save_path}")
+
+
+def plot_action_traces(result, save_path):
+    """For an agent rollout: amplitude and pulse period chosen over time, plus
+    the instantaneous rate. Shows what the continuous/discrete controller does."""
+    s = result["series"]
+    amp = np.asarray(s["amplitude"], dtype=float)
+    per = np.asarray(s["period_ms"], dtype=float)
+    if amp.size == 0 or np.all(np.isnan(amp)):
+        return
+    t = _series_time_s(result)
+    col = COLORS.get(result["condition"], "#054b7c")
+
+    fig, axs = plt.subplots(3, 1, figsize=(11, 7), sharex=True)
+    fig.subplots_adjust(left=0.09, right=0.97, top=0.93, bottom=0.08, hspace=0.25)
+    fig.suptitle(f"Controller actions over time: {result['condition']}",
+                 fontweight="bold")
+
+    axs[0].plot(t, amp, color=col, lw=0.9)
+    axs[0].set_ylabel("amplitude"); axs[0].set_title("Pulse amplitude")
+    axs[1].plot(t, per, color=col, lw=0.9)
+    axs[1].set_ylabel("period (ms)"); axs[1].set_title("Pulse period (gap to next pulse)")
+    axs[2].plot(t, 1000.0 / np.where(per > 0, per, np.nan), color=col, lw=0.9)
+    axs[2].axhline(config.MAX_FREQ_HZ, ls=":", c="k", lw=1, alpha=0.6)
+    axs[2].set_ylabel("rate (Hz)"); axs[2].set_xlabel("t (s)")
+    axs[2].set_title("Instantaneous rate (cap dotted)")
+
+    for ax in axs:
+        ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+    fig.savefig(save_path, dpi=130)
+    plt.close(fig)
+    print(f"  action-trace figure -> {save_path}")
 
 
 def plot_stim_spectrum(results, save_path, fmax_hz=200):
@@ -260,7 +320,7 @@ def plot_stim_spectrum(results, save_path, fmax_hz=200):
         return
 
     # reference lines: RL max rate and (if a dbs condition is present) its rate
-    ax.axvline(config.STIM_FREQ_HZ, color="#054b7c", ls=":", lw=1, alpha=0.6)
+    ax.axvline(config.MAX_FREQ_HZ, color="#054b7c", ls=":", lw=1, alpha=0.6)
     if any(r["condition"] == "dbs" and r["history"] is not None for r in results):
         ax.axvline(130, color="#e08214", ls=":", lw=1, alpha=0.6)
     ax.set_yscale("log")
@@ -317,6 +377,8 @@ def main():
         results.append(r)
         if record:
             plot_condition(r, os.path.join(config.OUTPUT_DIR, f"eval_{cond}.png"))
+        if cond == "rl":
+            plot_action_traces(r, os.path.join(config.OUTPUT_DIR, "eval_rl_actions.png"))
 
     print_table(results)
     save_csv(results, args.csv or os.path.join(config.OUTPUT_DIR, "eval_results.csv"))

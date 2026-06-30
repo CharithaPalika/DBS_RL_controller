@@ -1,0 +1,29 @@
+{
+  "os": "macOS-26.5.1-arm64-arm-64bit",
+  "python": "CPython 3.10.19",
+  "startedAt": "2026-06-30T05:56:57.233687Z",
+  "program": "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller/rl_stn_gpe/train.py",
+  "codePath": "rl_stn_gpe/train.py",
+  "codePathLocal": "rl_stn_gpe/train.py",
+  "git": {
+    "remote": "https://github.com/CharithaPalika/DBS_RL_controller.git",
+    "commit": "5025cc19387eff28d247d2e7f209ee7fe4d6c632"
+  },
+  "email": "charithapalika@gmail.com",
+  "root": "/Users/charithapalika/Desktop/Lab projects/DBS_RL_controller",
+  "host": "Charithas-MacBook-Air.local",
+  "executable": "/opt/homebrew/anaconda3/envs/workbench/bin/python",
+  "cpu_count": 10,
+  "cpu_count_logical": 10,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "192680046592"
+    }
+  },
+  "memory": {
+    "total": "17179869184"
+  },
+  "apple": {},
+  "writerId": "bue902vmrxkjk63zc2ikw25pnsy4yb3v"
+}
