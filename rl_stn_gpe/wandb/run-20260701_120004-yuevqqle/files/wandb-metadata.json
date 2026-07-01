@@ -1,0 +1,40 @@
+{
+  "os": "Windows-10-10.0.26200-SP0",
+  "python": "CPython 3.11.15",
+  "startedAt": "2026-07-01T06:30:04.143293Z",
+  "program": "F:\\Charitha\\DBS_RL_controller\\rl_stn_gpe\\train.py",
+  "codePath": "rl_stn_gpe\\train.py",
+  "codePathLocal": "train.py",
+  "git": {
+    "remote": "https://github.com/CharithaPalika/DBS_RL_controller.git",
+    "commit": "d6bed842186b1d7e516579a732242e16d6abc9a9"
+  },
+  "email": "shrini1908@gmail.com",
+  "root": "F:\\Charitha\\DBS_RL_controller\\rl_stn_gpe",
+  "host": "DESKTOP-GGO4QND",
+  "executable": "C:\\Users\\USER\\miniconda3\\envs\\rl_dbs\\python.exe",
+  "cpu_count": 20,
+  "cpu_count_logical": 28,
+  "gpu": "NVIDIA GeForce RTX 4070 Ti",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "968134488064",
+      "used": "897673576448"
+    }
+  },
+  "memory": {
+    "total": "68484620288"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 4070 Ti",
+      "memoryTotal": "12878610432",
+      "cudaCores": 7680,
+      "architecture": "Ada",
+      "uuid": "GPU-2f2fc6a9-0e13-f4db-b8f5-f4f8ead7fa8b"
+    }
+  ],
+  "cudaVersion": "13.2",
+  "writerId": "g7i1w9aqo4davq3awrbxv9zjuef7xfnt"
+}

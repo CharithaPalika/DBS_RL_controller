@@ -49,7 +49,7 @@ class STNGPeStepper:
         (default (7, 7) — matches the notebook plot).
     """
 
-    def __init__(self, yaml_path, seed=None, record_stn=(15, 15), record_gpe=(7, 7)):
+    def __init__(self, yaml_path, seed=None, record_stn=(9, 9), record_gpe=(7, 7)):
         if seed is not None:
             np.random.seed(seed)
 

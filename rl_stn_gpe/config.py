@@ -81,9 +81,9 @@ PULSE = {
 # network settles and the rolling metric buffer fills; THEN the condition's
 # stimulation engages. Warmup steps are discarded from training/eval.
 # ===========================================================================
-WARMUP_S = 1.0
-CONTROL_S = 5.0
-METRIC_WINDOW_S = 1.0    # rolling window for obs/reward (in integrator steps)
+WARMUP_S = 0.25
+CONTROL_S = 2.0
+METRIC_WINDOW_S = 0.25    # rolling window for obs/reward (in integrator steps)
 
 # Recompute the expensive window metrics (synchrony/entropy/beta) only every N
 # decisions and cache them; the per-pulse penalty is still applied every step.
@@ -96,7 +96,7 @@ METRIC_RECOMPUTE_EVERY = 1
 # Observation (STN only) + reward
 # ===========================================================================
 # Frequency settings for the window metrics (Hz).
-BETA_BAND = (12.5, 30.5)     # beta-band power range (matches original Analysis full beta)
+BETA_BAND = (10.5, 35.5)     # beta-band power range (matches original Analysis full beta)
 ENTROPY_FMAX = 35            # upper frequency bound for spectral entropy
 
 OBS_METRICS = ["synchrony", "beta_power", "entropy"]
@@ -116,8 +116,8 @@ OBS_NORM = {
 # beta_power is included here (lower beta = healthier). Targets/tols are tunable;
 # beta target/tol are in dB and should be recalibrated from a metrics pass.
 REWARD = {
-    "target_sync":    0.175, "tol_sync":    0.15, "w_sync":    2.0,  # lower better
-    "target_entropy": 0.70,  "tol_entropy": 0.20, "w_entropy": 1.0,  # higher better
+    "target_sync":    0.2, "tol_sync":    0.15, "w_sync":    3.0,  # lower better
+    "target_entropy": 0.65,  "tol_entropy": 0.20, "w_entropy": 0.5,  # higher better
     "target_beta":    70.0,  "tol_beta":    15.0, "w_beta":    0.0,  # lower better (dB)
     "lambda": 0.1,           # penalty per emitted pulse (energy / sparsity)
     # Negative side grows with distance beyond the band (far-from-optimal is
@@ -149,9 +149,9 @@ TRAIN = {
     "clip_range": 0.2,
     "vf_coef": 0.5,           # value-loss weight
     "max_grad_norm": 0.5,     # gradient clipping
-    "total_timesteps": 100_000, #200_000,
+    "total_timesteps": 50_000, #100_000, #200_000,
     "seed": 0,
-    "checkpoint_freq": 20_000,
+    "checkpoint_freq": 10_000,
     # Parallelism / device (MacBook: keep device 'cpu' - tiny MLP, env is the
     # bottleneck; use n_envs>1 for CPU-parallel speedup).
     "n_envs": 1,             # 1 -> DummyVecEnv (single); >1 -> SubprocVecEnv

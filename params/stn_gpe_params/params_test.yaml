@@ -11,7 +11,7 @@ inter_sparse : 0.1
 
 # STN-GPe params
 I_strd2_gpe : 5
-lat_strength_stn : 0.08 #0.0475 #0.02
+lat_strength_stn : 0.07 #0.0475 #0.02
 lat_strength_gpe : 0.1
 wsg_strength : 0.1
 wgs_strength : 0.1
@@ -21,7 +21,7 @@ binsize : 100
 stn_gpe_noise: 0
 
 # DBS Params
-DBS : True
+DBS : False
 DBS_func: 'biphasicDBS' # 'monophasicDBS', 'biphasicDBS' , 'biphasicDBS_uninoise', 'biphasicDBS_normalnoise'
 # DBS_amplitude : 150
 DBS_freq : 130

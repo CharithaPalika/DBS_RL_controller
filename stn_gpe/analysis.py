@@ -245,8 +245,9 @@ class Analysis:
     #     return spectral_entropy_value
 
     def spectral_entropy(self,signal, fs=1.0, nperseg=1, fmax=50, normalize=True):
+       
         # Compute the power spectral density (PSD)
-        freqs, psd = welch(signal, fs=fs, nperseg=nperseg)
+        freqs, psd = welch(np.array(signal), fs=fs, nperseg=nperseg)
         
         # Mask the PSD to limit the frequency range to 0-100 Hz
         mask = (freqs >= 0) & (freqs <= fmax)
@@ -259,7 +260,7 @@ class Analysis:
         
         # Compute the spectral entropy (Shannon entropy)
         se = entropy(psd)
-        
+        # print(psd)
         if normalize:
             se /= np.log(len(psd))  # Normalize to [0, 1]
         return se
