@@ -3,9 +3,9 @@
 # definition is changed from duty/step-based to ms-based.
 
 # Number of stn-gpe units
-stn_gpe_units : 16
+stn_gpe_units : 10
 
-# Simulation length (in INTEGRATOR STEPS - model convention) and step size (ms)
+# Number of iterations and time step
 time : 50000
 dt : 0.1
 
@@ -15,24 +15,26 @@ inter_sparse : 0.1
 
 # STN-GPe params
 I_strd2_gpe : 5
-lat_strength_stn : 0.0475 #0.0275
+lat_strength_stn : 0.08 #0.0475 #0.02
 lat_strength_gpe : 0.1
 wsg_strength : 0.1
 wgs_strength : 0.1
-I_gpe_ext : 6
+I_gpe_ext : 10 #6
 I_stn_ext : 12
 binsize : 100
-stn_gpe_noise: 0
+stn_gpe_noise: 3
 
 # DBS params (ms-based, clean charge-balanced biphasic)
 DBS : True
 DBS_func: 'biphasic_ms'
 DBS_freq_hz : 130            # pulse rate (Hz)
-DBS_amplitude : 250          # +amp then -amp  => charge balanced
-DBS_phase_width_ms : 0.4     # per-phase width (was duty 0.052 = 0.052*1000/130)
+DBS_amplitude : 100          # +amp then -amp  => charge balanced
+DBS_phase_width_ms : 0.2     # per-phase width (was duty 0.052 = 0.052*1000/130)
 DBS_interphase_ms : 1.0      # gap between phases (was pulseinterval 10 * 0.1 ms)
 
 # DBS Spread
 center : 7
 spread_amplitude : 1
 sigma : 3
+
+
