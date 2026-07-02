@@ -96,12 +96,15 @@ def spike_rate(spike_window, binsize=100, scaling_factor=8):
     Returns a dict with raw/processed/rescaled rates and the mean/min/max of the
     cross-quadrant std (a desynchronisation measure: higher std = the four STN
     quadrants are more out of step).
-    Expects (T, N) with T a multiple of ~10000 (e.g. the 1 s metric window).
+
+    Works for any window length (not just 1 s): the time axis is grouped into
+    ~10 ms bins (SAMPLES_PER_BIN samples @10 kHz), with the trailing remainder
+    trimmed, and the edge trim for normalisation scales down for short windows.
     """
+    SAMPLES_PER_BIN = 100                               # 10 ms @ 10 kHz
     spk = np.asarray(spike_window, dtype=float)        # (T, N)
     time, N = spk.shape
     grid = int(np.sqrt(N))
-    time_sec = time // 10000
 
     # forward sliding sum, truncated at the end (== sum(spikes[i:i+binsize]))
     cs = np.vstack([np.zeros((1, N)), np.cumsum(spk, axis=0)])  # (T+1, N)
@@ -114,10 +117,17 @@ def spike_rate(spike_window, binsize=100, scaling_factor=8):
         rate_coded[r0:r1, c0:c1, :].reshape(half * half, -1), axis=0)
     rate_abcd = [q(0, half, 0, half), q(half, grid, 0, half),
                  q(0, half, half, grid), q(half, grid, half, grid)]
+    # edge trim for the min-normalisation: 100 ms (1000 samples) on a long window,
+    # scaled down so short windows keep a non-empty interior.
+    edge = min(1000, max(1, time // 5))
     rate_abcd = np.array(
-        [(i - np.min(i[1000:time - 1000])) /
-         (np.max(i) - np.min(i[1000:time - 1000])) for i in rate_abcd]) * scaling_factor
-    rate_processed = np.mean(rate_abcd.reshape(4, time_sec * 100, -1), axis=2)
+        [(i - np.min(i[edge:time - edge])) /
+         (np.max(i) - np.min(i[edge:time - edge])) for i in rate_abcd]) * scaling_factor
+    # group the time axis into SAMPLES_PER_BIN-sample bins; trim the remainder.
+    n_bins = max(1, time // SAMPLES_PER_BIN)
+    usable = n_bins * SAMPLES_PER_BIN
+    rate_processed = np.mean(
+        rate_abcd[:, :usable].reshape(4, n_bins, SAMPLES_PER_BIN), axis=2)
     rate_rescaled = _rescale(rate_processed)
     std_per_bin = np.std(rate_rescaled, axis=0)
 

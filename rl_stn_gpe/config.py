@@ -118,7 +118,7 @@ METRIC_RECOMPUTE_EVERY = 1
 # Observation (STN only) + reward
 # ===========================================================================
 # Frequency settings for the window metrics (Hz).
-BETA_BAND = (12.5, 30.5)     # beta-band power range (matches original Analysis full beta)
+BETA_BAND = (10.0, 35)     # beta-band power range (matches original Analysis full beta)
 ENTROPY_FMAX = 35            # upper frequency bound for spectral entropy
 
 OBS_METRICS = ["synchrony", "beta_power", "entropy"]
