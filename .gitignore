@@ -1,4 +1,5 @@
 /params_old/**
-/rl_stn_gpe/output/**
+/rl_stn_gpe/outputs/**
+/rl_stn_gpe/outputs/*.png
 /rl_stn_gpe/*.png
 /wandb/**
