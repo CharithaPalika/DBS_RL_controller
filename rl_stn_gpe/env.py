@@ -162,10 +162,18 @@ class STNGPeEnv(gym.Env):
 
     # ------------------------------------------------------------------
     def reset(self, *, seed=None, options=None):
+        # Reproducibility: on the FIRST reset with no explicit seed, seed the env
+        # RNG from the per-env base seed (self._seed, set at construction). This
+        # makes the whole SEQUENCE of per-episode network seeds deterministic
+        # across runs, so a fixed config seed => a fully reproducible training run.
+        # Later resets (seed=None) continue that stream (networks still vary across
+        # episodes = domain randomization); an explicit seed always overrides.
+        if seed is None and not getattr(self, "_did_seed", False):
+            seed = self._seed
+        self._did_seed = True
         super().reset(seed=seed)
         # Per-episode network seed: use the given seed if provided (deterministic
-        # eval), otherwise draw a fresh one from the env RNG (domain randomization
-        # across connectivity realizations).
+        # eval), otherwise draw the next one from the (now seeded) env RNG stream.
         if seed is not None:
             s = seed
         else:
@@ -256,8 +264,7 @@ class STNGPeEnv(gym.Env):
         R, beta, H = self._cacheR, self._cacheBeta, self._cacheH
 
         obs = rwd.make_observation(R, beta, H, self.last_u)
-        reward, breakdown = rwd.compute_reward(R, H, beta, charge=stim_charge,
-                                               elapsed_ms=elapsed_ms)
+        reward, breakdown = rwd.compute_reward(R, H, beta, charge=stim_charge)
 
         self.decision += 1
         self.steps_done += advanced

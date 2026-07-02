@@ -41,8 +41,8 @@ def smoke(condition, n_steps=8, policy="random", seed=0):
         assert np.isfinite(r), f"non-finite reward: {r}"
         rews.append(r)
     print(f"  [{condition:7}] obs_dim={obs.shape[0]} act={env.action_space} "
-          f"meanR={np.mean(rews):+.3f} pulses={info['n_pulses']} "
-          f"R={info['R']:.3f} H={info['H']:.3f} beta={info['beta']:.1f}")
+          f"mean_reward={np.mean(rews):+.3f} pulses={info['n_pulses']} "
+          f"synchrony={info['R']:.3f} entropy={info['H']:.3f} beta={info['beta']:.1f}")
     return env
 
 

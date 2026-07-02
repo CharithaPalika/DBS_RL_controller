@@ -123,7 +123,7 @@ def plot_condition(result, save_path):
 
     fig, axs = plt.subplots(4, 1, figsize=(11, 10), sharex=False)
     fig.subplots_adjust(left=0.08, right=0.97, top=0.9, bottom=0.06, hspace=0.45)
-    metrics_txt = (f"R={result['R_final']:.3f}  H={result['H_final']:.3f}  "
+    metrics_txt = (f"synchrony={result['R_final']:.3f}  entropy={result['H_final']:.3f}  "
                    f"beta={result['beta_final']:.1f} dB  rate_std={result['rate_std']:.3f}  "
                    f"pulses={result['n_pulses']} ({result['pulse_rate_hz']:.1f} Hz)  "
                    f"charge={result['total_charge']:.0f}")

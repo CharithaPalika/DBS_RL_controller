@@ -8,15 +8,15 @@ Observation, each scaled to ~[0, 1] via OBS_NORM, in OBS_METRICS order, with the
 agent's previous (normalized) action appended (so the policy stays Markov):
     [synchrony R, beta_power (dB), entropy H,  <last action in [0,1]^k>]
 
-Reward (per decision, over the trailing metric window): a threshold-band "tent"
-per metric (synchrony, entropy, beta power), TIME-SCALED by the decision's
-elapsed time, minus a per-pulse CHARGE penalty.
-    term      = w * (1 - err/tol)           # err = distance on the BAD side of target
-    metric    = (term_sync + term_entropy + term_beta) * (elapsed_ms / ref_ms)
-    reward    = metric - lambda_charge * charge
--> metric terms positive inside the tolerance band, 0 at the edge, negative
-beyond. Time-scaling makes the episode return ~ the time-integral of quality
-(semi-MDP correction); the charge term is the per-pulse energy cost.
+Reward (per decision, over the trailing metric window): a simple banded distance
+per metric. For dist = |value - target|:
+    dist < near_tol  ->  +r_near              (bullseye)
+    dist < far_tol   ->  +r_far               (close-ish)
+    else             ->  -neg_scale * dist    (miss: penalty grows with distance)
+Each term has an on/off weight; a per-pulse charge penalty is subtracted:
+    reward = w_sync*t_sync + w_entropy*t_entropy + w_beta*t_beta
+             - w_charge * lambda_charge * |charge|
+No time scaling.
 """
 
 import numpy as np
@@ -41,45 +41,46 @@ def make_observation(R, beta, H, last_action=None):
     return np.asarray(obs, dtype=np.float32)
 
 
-def _tent(err, tol, w, neg_clip=None):
-    """One-sided threshold band.
+def _banded(value, target, near_tol, far_tol, r_near, r_far, neg_scale):
+    """Banded distance reward for one metric (symmetric distance to target).
 
-    +w at/past target, 0 at the tolerance edge, then NEGATIVE and growing with
-    distance beyond the band (so 'far from optimal' is punished more). The
-    positive side is naturally capped at +w (err>=0). `neg_clip` optionally
-    floors the negative side for stability; None = unbounded (errs are bounded
-    in practice, so the reward stays in a reasonable range).
+        dist = |value - target|
+        dist < near_tol  ->  +r_near              (bullseye)
+        dist < far_tol   ->  +r_far               (close-ish)
+        else             ->  -neg_scale * dist    (miss: scaled penalty)
     """
-    val = w * (1.0 - err / tol)
-    if neg_clip is not None:
-        val = max(neg_clip, val)
-    return float(val)
+    dist = abs(value - target)
+    if dist < near_tol:
+        return float(r_near)
+    if dist < far_tol:
+        return float(r_far)
+    return float(-neg_scale * dist)
 
 
-def compute_reward(R, H, beta, charge=0.0, elapsed_ms=None, cfg=None):
+def compute_reward(R, H, beta, charge=0.0, cfg=None):
     """Compute the scalar reward and a per-term breakdown (for logging).
 
     Parameters
     ----------
-    R : float          - synchrony over the window    (lower is better)
-    H : float          - spectral entropy             (higher is better)
-    beta : float       - beta-band power in dB         (lower is better)
-    charge : float     - |injected charge| this decision (energy cost; >= 0)
-    elapsed_ms : float - biological time advanced this decision; scales the metric
-                         terms (semi-MDP correction). None => no scaling (factor 1).
+    R : float      - synchrony over the window           (target = target_sync)
+    H : float      - spectral entropy                    (target = target_entropy)
+    beta : float   - beta-band power in dB               (target = target_beta)
+    charge : float - |injected charge| this decision (energy cost; >= 0)
 
-    The three metric terms are summed and scaled by (elapsed_ms / ref_ms); the
-    charge penalty is applied per decision (not time-scaled).
+    Each metric term is a banded distance to its target (see _banded), gated by an
+    on/off weight. A per-pulse charge penalty is subtracted. No time scaling.
     """
     cfg = cfg or config.REWARD
-    nc = cfg.get("neg_clip")
-    r_sync = _tent(max(0.0, R - cfg["target_sync"]), cfg["tol_sync"], cfg["w_sync"], nc)
-    r_entropy = _tent(max(0.0, cfg["target_entropy"] - H), cfg["tol_entropy"], cfg["w_entropy"], nc)
-    r_beta = _tent(max(0.0, beta - cfg["target_beta"]), cfg["tol_beta"], cfg["w_beta"], nc)
+    near, far = cfg["near_tol"], cfg["far_tol"]
+    r_near, r_far, neg = cfg["r_near"], cfg["r_far"], cfg["neg_scale"]
 
-    scale = 1.0 if elapsed_ms is None else (elapsed_ms / cfg.get("ref_ms", 25.0))
-    r_metric = (r_sync + r_entropy + r_beta) * scale
-    r_charge = -cfg.get("lambda_charge", 0.0) * float(charge)
-    total = float(r_metric + r_charge)
-    return total, {"r_sync": r_sync, "r_entropy": r_entropy, "r_beta": r_beta,
-                   "r_metric": float(r_metric), "r_charge": float(r_charge)}
+    r_sync = cfg["w_sync"] * _banded(R, cfg["target_sync"], near, far, r_near, r_far, neg)
+    r_entropy = cfg["w_entropy"] * _banded(H, cfg["target_entropy"], near, far, r_near, r_far, neg)
+    r_beta = cfg["w_beta"] * _banded(
+        beta, cfg["target_beta"], cfg["near_tol_beta"], cfg["far_tol_beta"],
+        r_near, r_far, neg)
+
+    r_charge = -cfg.get("w_charge", 1.0) * cfg.get("lambda_charge", 0.0) * float(charge)
+    total = float(r_sync + r_entropy + r_beta + r_charge)
+    return total, {"r_sync": float(r_sync), "r_entropy": float(r_entropy),
+                   "r_beta": float(r_beta), "r_charge": float(r_charge)}

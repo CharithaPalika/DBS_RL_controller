@@ -131,28 +131,32 @@ OBS_NORM = {
     "entropy":    (0.0, 1.0),
 }
 
-# Threshold-band ("tent") reward. For each metric:
-#     term = w * max(-1, 1 - err/tol)
-# where err is the distance on the BAD side of target. -> positive within the
-# tolerance band, 0 at the edge, negative (penalty) beyond. Each term in [-w, w].
-# beta_power is included here (lower beta = healthier). Targets/tols are tunable;
-# beta target/tol are in dB and should be recalibrated from a metrics pass.
+# Simplified banded distance reward. For each metric let dist = |value - target|:
+#     dist < near_tol      -> +r_near     (bullseye: fixed positive)
+#     dist < far_tol       -> +r_far      (close-ish: smaller positive)
+#     else                 -> -neg_scale * dist   (miss: penalty grows with distance)
+# Require near_tol < far_tol. sync/entropy share near/far tols (both in [0,1]);
+# beta is on a dB scale so it has its own near/far tols. Every term has an on/off
+# WEIGHT (set to 0 to disable that term). No time scaling.
 REWARD = {
-    "target_sync":    0.175, "tol_sync":    0.15, "w_sync":    2.0,  # lower R better
-    "target_entropy": 0.70,  "tol_entropy": 0.20, "w_entropy": 1.0,  # higher H better
-    "target_beta":    70.0,  "tol_beta":    15.0, "w_beta":    0.0,  # lower beta better (dB)
-    # Energy cost: penalty per unit injected |charge| (covers amplitude AND phase
-    # width, since charge ~ amplitude * 2*phase_width). Seeded small; calibrate
-    # against the std-DBS total charge (~1.3e5 in the eval table). Set 0 to ignore.
-    "lambda_charge":  1e-4,
-    # Metric terms (sync + entropy + beta) are scaled by (elapsed_ms / ref_ms) so
-    # the episode return ~ the TIME-INTEGRAL of quality. This is the semi-MDP
-    # correction for variable pulse spacing: a sparse-firing policy is not
-    # penalized merely for taking fewer (longer) steps per second.
-    "ref_ms":         25.0,
-    # Negative side grows with distance beyond the band (far-from-optimal is
-    # punished more). neg_clip floors each term for stability; None = unbounded.
-    "neg_clip": None,
+    "target_sync":    0.25, "target_entropy": 0.70, "target_beta": 75.0,
+
+    # bands + payouts for the [0,1] metrics (sync, entropy)
+    "near_tol":  0.10, "far_tol":  0.20,   # distance thresholds
+    "r_near":    1.0,  "r_far":    0.3,     # rewards inside each band
+    "neg_scale": 4.0,                       # penalty slope beyond far_tol (-neg_scale*dist)
+
+    # separate bands for beta (dB scale)
+    "near_tol_beta": 5.0, "far_tol_beta": 15.0,
+
+    # per-term on/off weights
+    "w_sync": 2.0, "w_entropy": 1.0, "w_beta": 0.0,
+
+    # energy cost: penalty = -w_charge * lambda_charge * |charge|.
+    # w_charge is the on/off toggle (default 1.0); lambda_charge sets the scale so
+    # the term is balanced against the ~[-,+1] metric rewards (charge ~ 40 / pulse,
+    # so lambda_charge ~ 0.01 => ~0.4 per pulse). Set w_charge=0 to disable.
+    "w_charge": 1.0, "lambda_charge": 0.01,
 }
 
 

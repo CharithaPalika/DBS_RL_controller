@@ -42,6 +42,7 @@ import numpy as np
 import torch.nn as nn
 
 from stable_baselines3 import PPO
+from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import (
@@ -85,7 +86,7 @@ class MetricsLogger(BaseCallback):
         infos = self.locals.get("infos", [])
         keys = ["R", "beta", "H", "pulse", "stim_charge",
                 "amplitude", "pulse_period_ms", "phase_width_ms", "interphase_gap_ms",
-                "r_sync", "r_entropy", "r_beta", "r_metric", "r_charge"]
+                "r_sync", "r_entropy", "r_beta", "r_charge"]
         for k in keys:
             vals = [i[k] for i in infos if k in i and np.isfinite(i[k])]
             if vals:
@@ -138,6 +139,11 @@ def main():
     n_steps = args.n_steps_arg or T["n_steps"]
     if args.smoke:
         total_timesteps, n_envs, n_steps = 64, 1, 16
+
+    # Global seeding (python / numpy / torch) for a reproducible run. The env
+    # streams and PPO are also seeded from T["seed"] below.
+    set_random_seed(T["seed"])
+    print(f"seed = {T['seed']} (reproducible run)")
 
     os.makedirs(config.CKPT_DIR, exist_ok=True)
     os.makedirs(config.LOG_DIR, exist_ok=True)
