@@ -101,7 +101,7 @@ ACTION_SPACE = {
 # ===========================================================================
 
 WARMUP_S = 0.25
-CONTROL_S = 2.0
+CONTROL_S = 1.0
 METRIC_WINDOW_S = 0.25   # rolling window (s) for obs/reward. Tunable: shorter =>
                          # more responsive control + noisier metrics (the window
                          # length is also the FFT segment, so it sets frequency
