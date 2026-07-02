@@ -1,0 +1,22 @@
+# Conda environment for the RL-DBS controller.
+# Create with:  conda env create -f environment.yml
+# Then:         conda activate dbs_rl
+#
+# Note: conda only provides Python + pip here; all packages are installed via pip
+# to avoid conda/pip numpy conflicts (SB3 + torch resolve cleanest through pip).
+name: dbs_rl
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - numpy<2.0
+      - scipy
+      - matplotlib
+      - pyyaml
+      - tqdm
+      - gymnasium
+      - stable-baselines3[extra]
+      - torch
+      - wandb

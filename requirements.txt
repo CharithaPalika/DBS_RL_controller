@@ -1,0 +1,17 @@
+# RL-DBS controller dependencies
+# Install into a fresh env with:  pip install -r requirements.txt
+
+# --- simulator + analysis (existing STN-GPe model) ---
+numpy<2.0            # pinned <2.0: validated model + SB3 stack are known-good on numpy 1.x
+scipy
+matplotlib
+pyyaml
+tqdm
+
+# --- reinforcement learning ---
+gymnasium
+stable-baselines3[extra]   # pulls torch, tensorboard, rich, tqdm (progress bar), psutil
+torch
+
+# --- experiment logging ---
+wandb
