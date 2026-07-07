@@ -71,9 +71,19 @@ DECISION_DT_MS = 1.5     # baseline chunk size (bio ms) for non-agent conditions
 # ACTION_MODE:
 #   "continuous" -> Box([-1, 1]^k); env rescales each enabled dim to its range.
 #   "discrete"   -> MultiDiscrete([n_bins, ...]); env maps each bin -> a value.
-# Only ENABLED params become action dimensions; disabled ones are held at their
-# "default". Set any param's "enabled" to False to fix it; flip ACTION_MODE to
-# switch the whole space between continuous and discrete.
+# Only ENABLED params become action dimensions; disabled ones are held FIXED at
+# their "default" value (see below). Set any param's "enabled" to False to fix
+# it; flip ACTION_MODE to switch the whole space between continuous and discrete.
+#
+# FIXED (preset) VALUES WHEN DISABLED
+# -----------------------------------
+# The "default" field of each param IS its fixed/preset value: whenever
+# "enabled" is False, the env holds that param constant at "default" every step
+# (it never enters the action vector). So to fix a param, set enabled=False and
+# set "default" to the constant value you want. Default config: the agent
+# controls AMPLITUDE + PULSE_PERIOD (i.e. amplitude + when-to-fire / frequency),
+# with pulse SHAPE (phase width, interphase gap) held at clinical constants.
+# Flip either shape param's "enabled" to True to hand it to the agent too.
 # ===========================================================================
 ACTION_MODE = "continuous"   # "continuous" | "discrete"
 
@@ -85,11 +95,12 @@ MIN_FREQ_HZ = 5          # min rate (longest gap); lower => allows longer silenc
 INTERVAL_MAP = "frequency"   # "frequency" (even Hz coverage) | "period" (even ms)
 
 ACTION_PARAMS = ["amplitude", "pulse_period_ms", "phase_width_ms", "interphase_gap_ms"]
+# "default" = the FIXED value used whenever "enabled" is False.
 ACTION_SPACE = {
-    "amplitude":         {"enabled": True, "low": 0.0,  "high": 200.0, "default": 100.0, "n_bins": 11},
-    "pulse_period_ms":   {"enabled": True, "low": None, "high": None,  "default": 25.0,  "n_bins": 16},
-    "phase_width_ms":    {"enabled": True, "low": 0.1,  "high": 0.5,   "default": 0.2,   "n_bins": 5},
-    "interphase_gap_ms": {"enabled": True, "low": 0.0,  "high": 2.0,   "default": 1.0,   "n_bins": 5},
+    "amplitude":         {"enabled": True,  "low": 0.0,  "high": 200.0, "default": 100.0, "n_bins": 11},
+    "pulse_period_ms":   {"enabled": True,  "low": None, "high": None,  "default": 25.0,  "n_bins": 16},
+    "phase_width_ms":    {"enabled": False, "low": 0.1,  "high": 0.5,   "default": 0.2,   "n_bins": 5},
+    "interphase_gap_ms": {"enabled": False, "low": 0.0,  "high": 2.0,   "default": 1.0,   "n_bins": 5},
 }
 
 
@@ -125,76 +136,77 @@ OBS_METRICS = ["synchrony", "beta_power", "entropy"]
 # (min, max) used to scale each metric into ~[0, 1] for the policy network.
 # beta_power comes back in dB (Analysis.power_beta); ranges to be tuned after
 # the first PD/Normal/DBS calibration runs.
+# NOTE: this fixed min/max scaling is used ONLY when USE_VECNORMALIZE is False.
+# When USE_VECNORMALIZE is True the env emits RAW metric values and VecNormalize
+# (running mean/std, robust to drift) does the scaling instead — see below.
 OBS_NORM = {
     "synchrony":  (0.0, 1.0),
     "beta_power": (40.0, 120.0),   # provisional (observed PD~95, DBS~82 dB); recalibrate
     "entropy":    (0.0, 1.0),
 }
 
-# Simplified banded distance reward. For each metric let dist = |value - target|:
-#     dist < near_tol      -> +r_near     (bullseye: fixed positive)
-#     dist < far_tol       -> +r_far      (close-ish: smaller positive)
-#     else                 -> -neg_scale * dist   (miss: penalty grows with distance)
-# Require near_tol < far_tol. sync/entropy share near/far tols (both in [0,1]);
-# beta is on a dB scale so it has its own near/far tols. Every term has an on/off
-# WEIGHT (set to 0 to disable that term). No time scaling.
+# ---------------------------------------------------------------------------
+# Observation normalization strategy
+# ---------------------------------------------------------------------------
+# USE_VECNORMALIZE True  -> the env returns RAW metrics + raw last-action, the
+#                           observation space is unbounded (Box(-inf, inf)), and
+#                           SB3 VecNormalize whitens obs with a running mean/std
+#                           (stats saved next to the model, reloaded at eval).
+# USE_VECNORMALIZE False -> legacy behaviour: env pre-scales metrics to ~[0,1]
+#                           via OBS_NORM and the obs space is Box(0, 1).
+USE_VECNORMALIZE = True
+VECNORM = {
+    "norm_obs": True,       # whiten observations (recommended)
+    "norm_reward": False,   # keep raw reward scale (targets/charge are meaningful)
+    "clip_obs": 10.0,       # clip normalized obs to +/- this many std
+}
+
+# Smooth (exponential) reward. Each metric term is a smooth bump peaking at its
+# target, giving PPO/SAC a usable gradient everywhere (unlike the old banded step
+# reward). For dist = |value - target| and a per-term "scale" (width):
+#     shape "gauss"   -> exp(-(dist / scale)**2)     (in (0, 1], peak 1 at target)
+#     shape "laplace" -> exp(-dist / scale)          (in (0, 1], peak 1 at target)
+#
+# SELECTABLE OBJECTIVES: each metric term has its own "enabled" flag AND weight
+# "w". Turn a metric OFF for the reward by setting enabled=False (or w=0); it is
+# then ignored entirely (it can still be observed/logged). "scale" sets how
+# tolerant the bump is: smaller => sharper peak (must sit near target),
+# larger => broader credit. beta is on a dB scale so its scale is larger.
+#
+# A per-pulse energy penalty is always subtracted: -w_charge*lambda_charge*|q|.
 REWARD = {
-    "target_sync":    0.25, "target_entropy": 0.70, "target_beta": 75.0,
-
-    # bands + payouts for the [0,1] metrics (sync, entropy)
-    "near_tol":  0.10, "far_tol":  0.20,   # distance thresholds
-    "r_near":    1.0,  "r_far":    0.3,     # rewards inside each band
-    "neg_scale": 4.0,                       # penalty slope beyond far_tol (-neg_scale*dist)
-
-    # separate bands for beta (dB scale)
-    "near_tol_beta": 5.0, "far_tol_beta": 15.0,
-
-    # per-term on/off weights
-    "w_sync": 2.0, "w_entropy": 1.0, "w_beta": 0.0,
-
+    "shape": "gauss",          # "gauss" | "laplace"
+    # metric -> {enabled, target, scale, w}. Disable any by enabled=False or w=0.
+    "terms": {
+        "synchrony":  {"enabled": True,  "target": 0.25, "scale": 0.15, "w": 2.0},
+        "beta_power": {"enabled": False, "target": 75.0, "scale": 8.0,  "w": 1.0},
+        "entropy":    {"enabled": True,  "target": 0.70, "scale": 0.15, "w": 1.0},
+    },
     # energy cost: penalty = -w_charge * lambda_charge * |charge|.
     # w_charge is the on/off toggle (default 1.0); lambda_charge sets the scale so
-    # the term is balanced against the ~[-,+1] metric rewards (charge ~ 40 / pulse,
+    # the term is balanced against the (0, 1] metric bumps (charge ~ 40 / pulse,
     # so lambda_charge ~ 0.01 => ~0.4 per pulse). Set w_charge=0 to disable.
     "w_charge": 1.0, "lambda_charge": 0.01,
 }
 
 
 # ===========================================================================
-# PPO  (Stable-Baselines3; actor-critic with an entropy bonus)
-#   SB3 PPO is inherently actor-critic; net_arch gives separate pi/vf heads and
-#   ent_coef adds the entropy term.
+# RL algorithm selection
+# ---------------------------------------------------------------------------
+# Pick which Stable-Baselines3 algorithm train.py builds. Each algorithm's
+# hyperparameters live in ITS OWN file under rl_stn_gpe/hparams/ (ppo.py, sac.py,
+# td3.py) so you can tune each independently without touching the others. Every
+# hparams file exports two dicts: HPARAMS (passed to the SB3 constructor) and RUN
+# (run-level: n_envs, total_timesteps, seed, eval/checkpoint cadence, device).
+#
+#   ppo -> on-policy actor-critic (works with continuous OR discrete actions)
+#   sac -> off-policy, sample-efficient, CONTINUOUS actions only (supports gSDE)
+#   td3 -> off-policy, deterministic policy, CONTINUOUS actions only (+ action noise)
+#
+# NOTE: SAC and TD3 require ACTION_MODE == "continuous" (train.py asserts this).
+# Override at the CLI with `--algo {ppo,sac,td3}`.
 # ===========================================================================
-TRAIN = {
-    "policy": "MlpPolicy",
-    # Network size/depth. Edit these lists to change it: e.g. [128,128] (wider),
-    # [256,256,128] (deeper). pi = actor, vf = critic (independent).
-    # "net_arch": {"pi": [64, 64], "vf": [64, 64]},
-    "net_arch": {"pi": [256, 128], "vf": [256, 128]},
-    "activation_fn": "tanh",   # 'tanh' | 'relu' | 'elu'  (hidden-layer activation)
-    "ent_coef": 0.01,        # entropy term (exploration)
-    "use_sde": True,         # gSDE smooth exploration (continuous only; auto-off if discrete)
-    "learning_rate": 3e-4,
-    "lr_schedule": "linear",  # 'constant' | 'linear' (decay LR to 0 over training)
-    "n_steps": 2048,          # rollout length per env before each PPO update
-    "batch_size": 128,        # minibatch size (buffer = n_steps * n_envs)
-    "n_epochs": 10,
-    "gamma": 0.99,
-    "gae_lambda": 0.95,
-    "clip_range": 0.2,
-    "vf_coef": 0.5,           # value-loss weight
-    "max_grad_norm": 0.5,     # gradient clipping
-    "total_timesteps": 100_000, #200_000,
-    "seed": 0,
-    "checkpoint_freq": 20_000,
-    # Parallelism / device (MacBook: keep device 'cpu' - tiny MLP, env is the
-    # bottleneck; use n_envs>1 for CPU-parallel speedup).
-    "n_envs": 1,             # 1 -> DummyVecEnv (single); >1 -> SubprocVecEnv
-    "device": "cpu",         # 'cpu' recommended on Mac; 'auto'/'mps' optional
-    # Evaluation during training (deterministic PD-rl env, fixed seed).
-    "eval_freq": 10_000,
-    "n_eval_episodes": 3,
-}
+ALGO = "ppo"   # "ppo" | "sac" | "td3"
 
 
 # ===========================================================================
@@ -274,14 +286,16 @@ def validate(dt_ms):
         f"narrow phase_width_ms / interphase_gap_ms.")
 
 
-def wandb_config(sim_params=None):
+def wandb_config(sim_params=None, train=None):
     """Assemble the full config dict to log to W&B.
 
     Combines the RL settings with the simulation params actually being run so a
     run is fully reproducible from its W&B config. `sim_params` is the loaded
-    YAML dict, passed in by train.py at init time.
+    YAML dict; `train` is the effective algo hparams+run dict (passed by
+    train.py, since hyperparameters now live in per-algo hparams files).
     """
     cfg = {
+        "algo": ALGO,
         "action_mode": ACTION_MODE,
         "max_freq_hz": MAX_FREQ_HZ,
         "min_freq_hz": MIN_FREQ_HZ,
@@ -293,11 +307,13 @@ def wandb_config(sim_params=None):
         "metric_window_s": METRIC_WINDOW_S,
         "obs_metrics": OBS_METRICS,
         "obs_norm": OBS_NORM,
+        "use_vecnormalize": USE_VECNORMALIZE,
         "beta_band": BETA_BAND,
         "entropy_fmax": ENTROPY_FMAX,
         "reward": REWARD,
-        "train": TRAIN,
     }
+    if train is not None:
+        cfg["train"] = train
     if sim_params is not None:
         cfg["sim_params"] = sim_params
     return cfg

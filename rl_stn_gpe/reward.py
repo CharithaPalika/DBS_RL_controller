@@ -8,14 +8,13 @@ Observation, each scaled to ~[0, 1] via OBS_NORM, in OBS_METRICS order, with the
 agent's previous (normalized) action appended (so the policy stays Markov):
     [synchrony R, beta_power (dB), entropy H,  <last action in [0,1]^k>]
 
-Reward (per decision, over the trailing metric window): a simple banded distance
-per metric. For dist = |value - target|:
-    dist < near_tol  ->  +r_near              (bullseye)
-    dist < far_tol   ->  +r_far               (close-ish)
-    else             ->  -neg_scale * dist    (miss: penalty grows with distance)
-Each term has an on/off weight; a per-pulse charge penalty is subtracted:
-    reward = w_sync*t_sync + w_entropy*t_entropy + w_beta*t_beta
-             - w_charge * lambda_charge * |charge|
+Reward (per decision, over the trailing metric window): a smooth exponential
+bump per metric. For dist = |value - target| and a per-term width "scale":
+    shape "gauss"    ->  exp(-(dist / scale)**2)      (in (0, 1], peak 1 at target)
+    shape "laplace"  ->  exp(-dist / scale)           (in (0, 1], peak 1 at target)
+Each metric term has its own on/off "enabled" flag and weight "w" (config-
+selectable objectives); a per-pulse charge penalty is subtracted:
+    reward = sum_over_enabled( w * bump(metric) ) - w_charge*lambda_charge*|charge|
 No time scaling.
 """
 
@@ -28,33 +27,48 @@ def _scale(value, lo, hi):
 
 
 def make_observation(R, beta, H, last_action=None):
-    """Return the normalized observation vector.
+    """Return the observation vector.
 
-    [scaled metrics in config.OBS_METRICS order] (+ last_action appended if given).
-    `last_action` is the previous action already normalized to [0, 1]^k (one entry
-    per enabled action param); pass None to omit it.
+    [metrics in config.OBS_METRICS order] (+ last_action appended if given).
+    `last_action` is the previous action normalized to [0, 1]^k (one entry per
+    enabled action param); pass None to omit it.
+
+    Scaling depends on config.USE_VECNORMALIZE:
+      - False -> metrics are pre-scaled to ~[0, 1] via config.OBS_NORM (legacy).
+      - True  -> RAW metric values are returned; SB3 VecNormalize whitens them
+                 (running mean/std). The env declares an unbounded obs space in
+                 this mode so raw values are always in-space.
     """
     vals = {"synchrony": R, "beta_power": beta, "entropy": H}
-    obs = [_scale(vals[k], *config.OBS_NORM[k]) for k in config.OBS_METRICS]
+    if config.USE_VECNORMALIZE:
+        obs = [float(vals[k]) for k in config.OBS_METRICS]
+    else:
+        obs = [_scale(vals[k], *config.OBS_NORM[k]) for k in config.OBS_METRICS]
     if last_action is not None:
         obs = obs + list(np.asarray(last_action, dtype=float).ravel())
     return np.asarray(obs, dtype=np.float32)
 
 
-def _banded(value, target, near_tol, far_tol, r_near, r_far, neg_scale):
-    """Banded distance reward for one metric (symmetric distance to target).
+def _bump(value, target, scale, shape="gauss"):
+    """Smooth exponential reward bump for one metric, peaking at `target`.
 
         dist = |value - target|
-        dist < near_tol  ->  +r_near              (bullseye)
-        dist < far_tol   ->  +r_far               (close-ish)
-        else             ->  -neg_scale * dist    (miss: scaled penalty)
+        shape "gauss"   ->  exp(-(dist / scale)**2)
+        shape "laplace" ->  exp(-dist / scale)
+
+    Returns a value in (0, 1] (== 1 exactly at target). `scale` sets the width
+    (larger => broader credit around the target).
     """
     dist = abs(value - target)
-    if dist < near_tol:
-        return float(r_near)
-    if dist < far_tol:
-        return float(r_far)
-    return float(-neg_scale * dist)
+    s = max(float(scale), 1e-9)
+    if shape == "laplace":
+        return float(np.exp(-dist / s))
+    return float(np.exp(-(dist / s) ** 2))
+
+
+# metric name (config.REWARD["terms"]) -> the short breakdown key used in the
+# env `info` dict and the training logger (kept stable for backward-compat).
+_TERM_KEY = {"synchrony": "r_sync", "entropy": "r_entropy", "beta_power": "r_beta"}
 
 
 def compute_reward(R, H, beta, charge=0.0, cfg=None):
@@ -62,25 +76,30 @@ def compute_reward(R, H, beta, charge=0.0, cfg=None):
 
     Parameters
     ----------
-    R : float      - synchrony over the window           (target = target_sync)
-    H : float      - spectral entropy                    (target = target_entropy)
-    beta : float   - beta-band power in dB               (target = target_beta)
+    R : float      - synchrony over the window
+    H : float      - spectral entropy
+    beta : float   - beta-band power in dB
     charge : float - |injected charge| this decision (energy cost; >= 0)
 
-    Each metric term is a banded distance to its target (see _banded), gated by an
-    on/off weight. A per-pulse charge penalty is subtracted. No time scaling.
+    Each metric term is a smooth exponential bump toward its target (see _bump),
+    included only if its config `enabled` flag is set, and scaled by its weight
+    `w`. A per-pulse charge penalty is subtracted. No time scaling.
     """
     cfg = cfg or config.REWARD
-    near, far = cfg["near_tol"], cfg["far_tol"]
-    r_near, r_far, neg = cfg["r_near"], cfg["r_far"], cfg["neg_scale"]
+    shape = cfg.get("shape", "gauss")
+    vals = {"synchrony": R, "entropy": H, "beta_power": beta}
 
-    r_sync = cfg["w_sync"] * _banded(R, cfg["target_sync"], near, far, r_near, r_far, neg)
-    r_entropy = cfg["w_entropy"] * _banded(H, cfg["target_entropy"], near, far, r_near, r_far, neg)
-    r_beta = cfg["w_beta"] * _banded(
-        beta, cfg["target_beta"], cfg["near_tol_beta"], cfg["far_tol_beta"],
-        r_near, r_far, neg)
+    breakdown = {"r_sync": 0.0, "r_entropy": 0.0, "r_beta": 0.0}
+    total = 0.0
+    for name, spec in cfg["terms"].items():
+        if spec.get("enabled", True) and spec.get("w", 0.0) != 0.0:
+            r = spec["w"] * _bump(vals[name], spec["target"], spec["scale"], shape)
+        else:
+            r = 0.0
+        breakdown[_TERM_KEY[name]] = float(r)
+        total += r
 
     r_charge = -cfg.get("w_charge", 1.0) * cfg.get("lambda_charge", 0.0) * float(charge)
-    total = float(r_sync + r_entropy + r_beta + r_charge)
-    return total, {"r_sync": float(r_sync), "r_entropy": float(r_entropy),
-                   "r_beta": float(r_beta), "r_charge": float(r_charge)}
+    breakdown["r_charge"] = float(r_charge)
+    total = float(total + r_charge)
+    return total, breakdown

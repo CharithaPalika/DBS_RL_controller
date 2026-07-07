@@ -77,10 +77,16 @@ class STNGPeEnv(gym.Env):
             nvec = [config.ACTION_SPACE[p]["n_bins"] for p in self.enabled]
             self.action_space = spaces.MultiDiscrete(nvec)
 
-        # --- observation space: metrics + previous action (normalized to [0,1]) ---
+        # --- observation space: metrics + previous action ---
+        # With VecNormalize the env emits RAW metrics (SB3 whitens them), so the
+        # space is unbounded; otherwise metrics are pre-scaled to [0, 1].
         obs_dim = len(config.OBS_METRICS) + self._n_act
-        self.observation_space = spaces.Box(low=0.0, high=1.0,
-                                            shape=(obs_dim,), dtype=np.float32)
+        if config.USE_VECNORMALIZE:
+            self.observation_space = spaces.Box(low=-np.inf, high=np.inf,
+                                                shape=(obs_dim,), dtype=np.float32)
+        else:
+            self.observation_space = spaces.Box(low=0.0, high=1.0,
+                                                shape=(obs_dim,), dtype=np.float32)
 
         self._seed = seed
 

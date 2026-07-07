@@ -53,8 +53,13 @@ DT_DECISION_S = config.DECISION_DT_MS / 1000.0
 
 
 # ---------------------------------------------------------------------------
-def rollout(condition, model, seed, time_override=None, record=False):
-    """Run one episode and collect series + steady-state metrics (+history)."""
+def rollout(condition, model, seed, time_override=None, record=False, normalizer=None):
+    """Run one episode and collect series + steady-state metrics (+history).
+
+    `normalizer` (a frozen VecNormalize, or None) rescales the raw observation to
+    match training before the policy sees it — required when the model was
+    trained with config.USE_VECNORMALIZE.
+    """
     env = STNGPeEnv(condition=condition, seed=seed, record=record)
     obs, _ = env.reset(seed=seed)
     if time_override is not None:
@@ -66,7 +71,8 @@ def rollout(condition, model, seed, time_override=None, record=False):
     while not done:
         action = 0       # ignored by baselines (none / openloop)
         if condition == "rl":
-            action, _ = model.predict(obs, deterministic=True)
+            obs_in = normalizer.normalize_obs(obs) if normalizer is not None else obs
+            action, _ = model.predict(obs_in, deterministic=True)
         obs, _, terminated, truncated, info = env.step(action)
         series["R"].append(info["R"]); series["H"].append(info["H"])
         series["beta"].append(info["beta"]); series["pulse"].append(info["pulse"])
@@ -213,12 +219,13 @@ def plot_comparison(results, save_path):
     fig.suptitle("DBS control comparison", fontweight="bold")
 
     # Row 0: steady-state bar charts
+    _tgt = config.REWARD["terms"]
     axs[0, 0].bar(conds, [r["R_final"] for r in results], color=cols)
-    axs[0, 0].axhline(config.REWARD["target_sync"], ls="--", c="k", lw=1)
+    axs[0, 0].axhline(_tgt["synchrony"]["target"], ls="--", c="k", lw=1)
     axs[0, 0].set_title("Synchrony (target dashed)"); axs[0, 0].set_ylabel("R")
 
     axs[0, 1].bar(conds, [r["H_final"] for r in results], color=cols)
-    axs[0, 1].axhline(config.REWARD["target_entropy"], ls="--", c="k", lw=1)
+    axs[0, 1].axhline(_tgt["entropy"]["target"], ls="--", c="k", lw=1)
     axs[0, 1].set_title("Spectral entropy (target dashed)")
 
     axs[0, 2].bar(conds, [r["beta_final"] for r in results], color=cols)
@@ -338,8 +345,12 @@ def main():
     p = argparse.ArgumentParser(description="Compare PD / std-DBS / RL controllers.")
     p.add_argument("--conditions", nargs="+",
                    default=["normal", "pd", "dbs", "rl"])
+    p.add_argument("--algo", default=None, choices=["ppo", "sac", "td3"],
+                   help="Algorithm the RL model was trained with (default: config.ALGO).")
     p.add_argument("--model", default=None,
-                   help="Path to trained PPO .zip (defaults to best/final in CKPT_DIR).")
+                   help="Path to trained model .zip (defaults to best/final in CKPT_DIR).")
+    p.add_argument("--vecnormalize", default=None,
+                   help="Path to VecNormalize stats .pkl (default: CKPT_DIR/vecnormalize.pkl).")
     p.add_argument("--seed", type=int, default=123)
     p.add_argument("--time", type=int, default=None, help="Override control steps.")
     p.add_argument("--save", default=None)
@@ -350,13 +361,18 @@ def main():
 
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 
-    # Load the PPO model only if needed.
+    # Load the RL model (+ VecNormalize stats) only if needed.
     model = None
+    normalizer = None
     if "rl" in args.conditions:
-        from stable_baselines3 import PPO
+        from stable_baselines3 import PPO, SAC, TD3
+        registry = {"ppo": PPO, "sac": SAC, "td3": TD3}
+        algo = (args.algo or config.ALGO).lower()
+        Cls = registry[algo]
+
         path = args.model
         if path is None:
-            for cand in ("best_model.zip", "ppo_dbs_final.zip"):
+            for cand in ("best_model.zip", f"{algo}_dbs_final.zip", "ppo_dbs_final.zip"):
                 c = os.path.join(config.CKPT_DIR, cand)
                 if os.path.exists(c):
                     path = c
@@ -365,15 +381,30 @@ def main():
             raise FileNotFoundError(
                 "No trained model found. Pass --model PATH or train first "
                 "(or drop 'rl' from --conditions).")
-        print(f"loading model: {path}")
-        model = PPO.load(path, device="cpu")
+        print(f"loading model ({algo.upper()}): {path}")
+        model = Cls.load(path, device="cpu")
+
+        # If the model was trained with VecNormalize, load its frozen obs stats
+        # so eval rescales observations identically before calling the policy.
+        if config.USE_VECNORMALIZE:
+            from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+            vn_path = args.vecnormalize or os.path.join(config.CKPT_DIR, "vecnormalize.pkl")
+            if os.path.exists(vn_path):
+                dummy = DummyVecEnv([lambda: STNGPeEnv(condition="rl", seed=args.seed)])
+                normalizer = VecNormalize.load(vn_path, dummy)
+                normalizer.training = False
+                normalizer.norm_reward = False
+                print(f"loaded VecNormalize stats: {vn_path}")
+            else:
+                print(f"WARNING: USE_VECNORMALIZE is on but no stats at {vn_path}; "
+                      "using raw observations (results may be off).")
 
     record = not args.no_plots
     results = []
     for cond in args.conditions:
         print(f"rolling out: {cond} ...")
         r = rollout(cond, model, seed=args.seed, time_override=args.time,
-                    record=record)
+                    record=record, normalizer=normalizer)
         results.append(r)
         if record:
             plot_condition(r, os.path.join(config.OUTPUT_DIR, f"eval_{cond}.png"))
