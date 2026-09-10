@@ -31,6 +31,7 @@ Examples
 import os
 import sys
 import argparse
+import re
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
@@ -51,7 +52,9 @@ from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import (
     DummyVecEnv, SubprocVecEnv, VecNormalize)
 from stable_baselines3.common.callbacks import (
-    BaseCallback, CheckpointCallback, EvalCallback, CallbackList)
+    BaseCallback, CheckpointCallback, CallbackList)
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.vec_env import sync_envs_normalization
 
 from stn_gpe import load_yaml
 from rl_stn_gpe import config
@@ -97,6 +100,13 @@ def maybe_vecnormalize(vec_env, training):
     if not training:
         kw["norm_reward"] = False
     return VecNormalize(vec_env, training=training, **kw)
+
+
+def safe_name(name):
+    """Filesystem-safe run name for checkpoint folders."""
+    name = str(name).strip() or "run"
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name)
+    return name.strip("._-") or "run"
 
 
 def build_model(algo, vec_env, hp, run, device, seed):
@@ -153,11 +163,127 @@ class MetricsLogger(BaseCallback):
         infos = self.locals.get("infos", [])
         keys = ["R", "beta", "H", "pulse", "stim_charge",
                 "amplitude", "pulse_period_ms", "phase_width_ms", "interphase_gap_ms",
-                "r_sync", "r_entropy", "r_beta", "r_charge"]
+                "r_sync", "r_entropy", "r_beta", "r_charge", "r_bad_state"]
         for k in keys:
             vals = [i[k] for i in infos if k in i and np.isfinite(i[k])]
             if vals:
                 self.logger.record(f"env/{k}", float(np.mean(vals)))
+        return True
+
+
+class TopKEvalCallback(BaseCallback):
+    """Evaluate periodically and keep the top-K models by mean eval return.
+
+    Models are selected by the same scalar return used during evaluation. Each
+    kept model is saved with its reward and timestep in the filename, and a
+    sorted `top_models.csv` index is written next to them.
+    """
+
+    def __init__(self, eval_env, save_path, eval_freq, n_eval_episodes,
+                 deterministic=True, top_k=4, verbose=1):
+        super().__init__(verbose=verbose)
+        self.eval_env = eval_env
+        self.save_path = save_path
+        self.eval_freq = int(eval_freq)
+        self.n_eval_episodes = int(n_eval_episodes)
+        self.deterministic = deterministic
+        self.top_k = int(top_k)
+        self.records = []
+
+    def _init_callback(self):
+        os.makedirs(self.save_path, exist_ok=True)
+
+    def _score_token(self, score):
+        return f"{score:+.6f}".replace("+", "pos").replace("-", "neg").replace(".", "p")
+
+    def _write_index(self):
+        index_path = os.path.join(self.save_path, "top_models.csv")
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write("rank,mean_reward,timesteps,model_path,vecnormalize_path\n")
+            for rank, rec in enumerate(self.records, start=1):
+                f.write(
+                    f"{rank},{rec['mean_reward']:.10f},{rec['timesteps']},"
+                    f"{rec['model_path']},{rec.get('vecnormalize_path', '')}\n"
+                )
+
+    def _remove_record_files(self, rec):
+        for key in ("model_path", "vecnormalize_path"):
+            path = rec.get(key)
+            if path and os.path.exists(path):
+                os.remove(path)
+
+    def _save_candidate(self, mean_reward):
+        token = self._score_token(mean_reward)
+        stem = f"top_reward_{token}_steps_{self.num_timesteps}"
+        model_path = os.path.join(self.save_path, f"{stem}.zip")
+        self.model.save(model_path)
+
+        rec = {
+            "mean_reward": float(mean_reward),
+            "timesteps": int(self.num_timesteps),
+            "model_path": model_path,
+        }
+
+        if config.USE_VECNORMALIZE:
+            vn = self.model.get_vec_normalize_env()
+            if vn is not None:
+                vn_path = os.path.join(self.save_path, f"{stem}_vecnormalize.pkl")
+                vn.save(vn_path)
+                rec["vecnormalize_path"] = vn_path
+
+        return rec
+
+    def _on_step(self) -> bool:
+        if self.eval_freq <= 0 or self.n_calls % self.eval_freq != 0:
+            return True
+
+        try:
+            sync_envs_normalization(self.training_env, self.eval_env)
+        except AttributeError:
+            # Raised when one env is VecNormalize-wrapped and the other is not.
+            pass
+
+        episode_rewards, episode_lengths = evaluate_policy(
+            self.model,
+            self.eval_env,
+            n_eval_episodes=self.n_eval_episodes,
+            deterministic=self.deterministic,
+            return_episode_rewards=True,
+            warn=False,
+        )
+        mean_reward = float(np.mean(episode_rewards))
+        std_reward = float(np.std(episode_rewards))
+        mean_ep_length = float(np.mean(episode_lengths))
+
+        self.logger.record("eval/mean_reward", mean_reward)
+        self.logger.record("eval/std_reward", std_reward)
+        self.logger.record("eval/mean_ep_length", mean_ep_length)
+        if self.records:
+            self.logger.record(
+                "eval/top_k_threshold",
+                min(r["mean_reward"] for r in self.records),
+            )
+
+        qualifies = (
+            len(self.records) < self.top_k
+            or mean_reward > min(r["mean_reward"] for r in self.records)
+        )
+        if qualifies:
+            rec = self._save_candidate(mean_reward)
+            self.records.append(rec)
+            self.records.sort(key=lambda r: r["mean_reward"], reverse=True)
+            removed = self.records[self.top_k:]
+            self.records = self.records[:self.top_k]
+            for old in removed:
+                self._remove_record_files(old)
+            self._write_index()
+            if self.verbose:
+                rank = self.records.index(rec) + 1
+                print(
+                    f"saved top-{self.top_k} model rank {rank}: "
+                    f"mean_reward={mean_reward:.3f} -> {rec['model_path']}"
+                )
+
         return True
 
 
@@ -223,9 +349,13 @@ def main():
     set_random_seed(seed)
     print(f"algo = {algo.upper()} | seed = {seed} | vecnormalize = {config.USE_VECNORMALIZE}")
 
-    os.makedirs(config.CKPT_DIR, exist_ok=True)
+    run_label = safe_name(args.run_name or config.WANDB["run_name"])
+    run_ckpt_dir = os.path.join(config.CKPT_DIR, algo, f"{run_label}_seed{seed}")
+    top_model_dir = os.path.join(run_ckpt_dir, "top_models")
+    os.makedirs(run_ckpt_dir, exist_ok=True)
     os.makedirs(config.LOG_DIR, exist_ok=True)
     prefix = f"{algo}_dbs"
+    print(f"checkpoints -> {run_ckpt_dir}")
 
     # --- W&B ---
     run = None
@@ -257,30 +387,30 @@ def main():
     # --- callbacks ---
     callbacks = [MetricsLogger(),
                  CheckpointCallback(save_freq=max(RUN["checkpoint_freq"] // n_envs, 1),
-                                    save_path=config.CKPT_DIR, name_prefix=prefix)]
+                                    save_path=run_ckpt_dir, name_prefix=prefix)]
     if do_eval:
         eval_env = build_vec_env(1, condition=args.condition, base_seed=seed + 999)
         eval_env = maybe_vecnormalize(eval_env, training=False)  # SB3 syncs stats pre-eval
-        callbacks.append(EvalCallback(
-            eval_env, best_model_save_path=config.CKPT_DIR,
+        callbacks.append(TopKEvalCallback(
+            eval_env, save_path=top_model_dir,
             eval_freq=max(RUN["eval_freq"] // n_envs, 1),
-            n_eval_episodes=RUN["n_eval_episodes"], deterministic=True))
+            n_eval_episodes=RUN["n_eval_episodes"], deterministic=True, top_k=4))
     if use_wandb:
         from wandb.integration.sb3 import WandbCallback
-        callbacks.append(WandbCallback(model_save_path=config.CKPT_DIR, verbose=1))
+        callbacks.append(WandbCallback(model_save_path=run_ckpt_dir, verbose=1))
 
     # --- train ---
     model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks),
                 progress_bar=True)
 
-    final = os.path.join(config.CKPT_DIR, f"{prefix}_final.zip")
+    final = os.path.join(run_ckpt_dir, f"{prefix}_final.zip")
     model.save(final)
     print(f"saved final model -> {final}")
     # Persist VecNormalize running stats so eval can reproduce the obs scaling.
     if config.USE_VECNORMALIZE:
         vn = model.get_vec_normalize_env()
         if vn is not None:
-            vn_path = os.path.join(config.CKPT_DIR, "vecnormalize.pkl")
+            vn_path = os.path.join(run_ckpt_dir, "vecnormalize.pkl")
             vn.save(vn_path)
             print(f"saved VecNormalize stats -> {vn_path}")
     if run is not None:

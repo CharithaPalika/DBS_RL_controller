@@ -8,13 +8,13 @@ Observation, each scaled to ~[0, 1] via OBS_NORM, in OBS_METRICS order, with the
 agent's previous (normalized) action appended (so the policy stays Markov):
     [synchrony R, beta_power (dB), entropy H,  <last action in [0,1]^k>]
 
-Reward (per decision, over the trailing metric window): a smooth exponential
-bump per metric. For dist = |value - target| and a per-term width "scale":
-    shape "gauss"    ->  exp(-(dist / scale)**2)      (in (0, 1], peak 1 at target)
-    shape "laplace"  ->  exp(-dist / scale)           (in (0, 1], peak 1 at target)
-Each metric term has its own on/off "enabled" flag and weight "w" (config-
-selectable objectives); a per-pulse charge penalty is subtracted:
-    reward = sum_over_enabled( w * bump(metric) ) - w_charge*lambda_charge*|charge|
+Reward (per decision, over the trailing metric window): a monotonic objective
+matching the project goal:
+    reward = w_entropy * H - w_sync * R - lambda_charge * |charge|
+where R is synchrony, H is spectral entropy, and |charge| is absolute injected
+charge for the current pulse/window. beta_power is logged/observed but not used
+unless config.REWARD["w_beta"] is set nonzero. An optional bad-state penalty is
+applied when synchrony is high and entropy is low at the same time.
 No time scaling.
 """
 
@@ -66,8 +66,8 @@ def _bump(value, target, scale, shape="gauss"):
     return float(np.exp(-(dist / s) ** 2))
 
 
-# metric name (config.REWARD["terms"]) -> the short breakdown key used in the
-# env `info` dict and the training logger (kept stable for backward-compat).
+# metric name -> the short breakdown key used in the env `info` dict and the
+# training logger (kept stable for backward-compat).
 _TERM_KEY = {"synchrony": "r_sync", "entropy": "r_entropy", "beta_power": "r_beta"}
 
 
@@ -81,25 +81,50 @@ def compute_reward(R, H, beta, charge=0.0, cfg=None):
     beta : float   - beta-band power in dB
     charge : float - |injected charge| this decision (energy cost; >= 0)
 
-    Each metric term is a smooth exponential bump toward its target (see _bump),
-    included only if its config `enabled` flag is set, and scaled by its weight
-    `w`. A per-pulse charge penalty is subtracted. No time scaling.
+    Monotonic objective: lower synchrony is better, higher entropy is better,
+    and lower absolute stimulation charge is better. If configured, an extra
+    penalty is applied when R is above the synchrony threshold and H is below
+    the entropy threshold. No time scaling.
     """
     cfg = cfg or config.REWARD
-    shape = cfg.get("shape", "gauss")
-    vals = {"synchrony": R, "entropy": H, "beta_power": beta}
 
-    breakdown = {"r_sync": 0.0, "r_entropy": 0.0, "r_beta": 0.0}
-    total = 0.0
-    for name, spec in cfg["terms"].items():
-        if spec.get("enabled", True) and spec.get("w", 0.0) != 0.0:
-            r = spec["w"] * _bump(vals[name], spec["target"], spec["scale"], shape)
-        else:
-            r = 0.0
-        breakdown[_TERM_KEY[name]] = float(r)
-        total += r
+    # Previous target-bump reward, kept for reference.
+    # shape = cfg.get("shape", "gauss")
+    # vals = {"synchrony": R, "entropy": H, "beta_power": beta}
+    # breakdown = {"r_sync": 0.0, "r_entropy": 0.0, "r_beta": 0.0}
+    # total = 0.0
+    # for name, spec in cfg["terms"].items():
+    #     if spec.get("enabled", True) and spec.get("w", 0.0) != 0.0:
+    #         r = spec["w"] * _bump(vals[name], spec["target"], spec["scale"], shape)
+    #     else:
+    #         r = 0.0
+    #     breakdown[_TERM_KEY[name]] = float(r)
+    #     total += r
+    # r_charge = -cfg.get("w_charge", 1.0) * cfg.get("lambda_charge", 0.0) * float(charge)
+    # breakdown["r_charge"] = float(r_charge)
+    # total = float(total + r_charge)
+    # return total, breakdown
 
-    r_charge = -cfg.get("w_charge", 1.0) * cfg.get("lambda_charge", 0.0) * float(charge)
-    breakdown["r_charge"] = float(r_charge)
-    total = float(total + r_charge)
+    r_sync = -cfg.get("w_sync", 0.0) * float(R)
+    r_entropy = cfg.get("w_entropy", 0.0) * float(H)
+    r_beta = -cfg.get("w_beta", 0.0) * float(beta)
+    r_charge = -cfg.get("lambda_charge", 0.0) * float(charge)
+    bad = cfg.get("bad_state", {})
+    if (
+        bad.get("enabled", False)
+        and float(R) > bad.get("sync_threshold", float("inf"))
+        and float(H) < bad.get("entropy_threshold", float("-inf"))
+    ):
+        r_bad_state = -float(bad.get("penalty", 0.0))
+    else:
+        r_bad_state = 0.0
+
+    breakdown = {
+        "r_sync": float(r_sync),
+        "r_entropy": float(r_entropy),
+        "r_beta": float(r_beta),
+        "r_charge": float(r_charge),
+        "r_bad_state": float(r_bad_state),
+    }
+    total = float(r_sync + r_entropy + r_beta + r_charge + r_bad_state)
     return total, breakdown

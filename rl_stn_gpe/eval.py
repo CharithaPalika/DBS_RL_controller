@@ -219,14 +219,21 @@ def plot_comparison(results, save_path):
     fig.suptitle("DBS control comparison", fontweight="bold")
 
     # Row 0: steady-state bar charts
-    _tgt = config.REWARD["terms"]
+    _tgt = config.REWARD.get("terms", {})
     axs[0, 0].bar(conds, [r["R_final"] for r in results], color=cols)
-    axs[0, 0].axhline(_tgt["synchrony"]["target"], ls="--", c="k", lw=1)
-    axs[0, 0].set_title("Synchrony (target dashed)"); axs[0, 0].set_ylabel("R")
+    if "synchrony" in _tgt:
+        axs[0, 0].axhline(_tgt["synchrony"]["target"], ls="--", c="k", lw=1)
+        axs[0, 0].set_title("Synchrony (target dashed)")
+    else:
+        axs[0, 0].set_title("Synchrony (lower better)")
+    axs[0, 0].set_ylabel("R")
 
     axs[0, 1].bar(conds, [r["H_final"] for r in results], color=cols)
-    axs[0, 1].axhline(_tgt["entropy"]["target"], ls="--", c="k", lw=1)
-    axs[0, 1].set_title("Spectral entropy (target dashed)")
+    if "entropy" in _tgt:
+        axs[0, 1].axhline(_tgt["entropy"]["target"], ls="--", c="k", lw=1)
+        axs[0, 1].set_title("Spectral entropy (target dashed)")
+    else:
+        axs[0, 1].set_title("Spectral entropy (higher better)")
 
     axs[0, 2].bar(conds, [r["beta_final"] for r in results], color=cols)
     axs[0, 2].axhline(pd_beta, ls="--", c="k", lw=1)
@@ -341,6 +348,34 @@ def plot_stim_spectrum(results, save_path, fmax_hz=200):
 
 
 # ---------------------------------------------------------------------------
+def find_default_model(algo):
+    """Find a model when --model is omitted.
+
+    Prefer the newest run-specific top-model index, then fall back to the old
+    flat checkpoint layout for backwards compatibility.
+    """
+    indexes = []
+    for root, _, files in os.walk(config.CKPT_DIR):
+        if "top_models.csv" in files:
+            path = os.path.join(root, "top_models.csv")
+            indexes.append((os.path.getmtime(path), path))
+    for _, index_path in sorted(indexes, reverse=True):
+        with open(index_path, newline="") as f:
+            rows = list(csv.DictReader(f))
+        if not rows:
+            continue
+        model_path = rows[0].get("model_path")
+        if model_path and os.path.exists(model_path):
+            return model_path
+
+    for cand in ("best_model.zip", f"{algo}_dbs_final.zip", "ppo_dbs_final.zip"):
+        c = os.path.join(config.CKPT_DIR, cand)
+        if os.path.exists(c):
+            return c
+    return None
+
+
+# ---------------------------------------------------------------------------
 def main():
     p = argparse.ArgumentParser(description="Compare PD / std-DBS / RL controllers.")
     p.add_argument("--conditions", nargs="+",
@@ -370,13 +405,7 @@ def main():
         algo = (args.algo or config.ALGO).lower()
         Cls = registry[algo]
 
-        path = args.model
-        if path is None:
-            for cand in ("best_model.zip", f"{algo}_dbs_final.zip", "ppo_dbs_final.zip"):
-                c = os.path.join(config.CKPT_DIR, cand)
-                if os.path.exists(c):
-                    path = c
-                    break
+        path = args.model or find_default_model(algo)
         if path is None or not os.path.exists(path):
             raise FileNotFoundError(
                 "No trained model found. Pass --model PATH or train first "
@@ -388,7 +417,14 @@ def main():
         # so eval rescales observations identically before calling the policy.
         if config.USE_VECNORMALIZE:
             from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-            vn_path = args.vecnormalize or os.path.join(config.CKPT_DIR, "vecnormalize.pkl")
+            paired_vn = path[:-4] + "_vecnormalize.pkl" if path.endswith(".zip") else None
+            run_vn = os.path.join(os.path.dirname(path), "vecnormalize.pkl")
+            vn_path = (
+                args.vecnormalize
+                or (paired_vn if paired_vn and os.path.exists(paired_vn) else None)
+                or (run_vn if os.path.exists(run_vn) else None)
+                or os.path.join(config.CKPT_DIR, "vecnormalize.pkl")
+            )
             if os.path.exists(vn_path):
                 dummy = DummyVecEnv([lambda: STNGPeEnv(condition="rl", seed=args.seed)])
                 normalizer = VecNormalize.load(vn_path, dummy)

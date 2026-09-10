@@ -90,7 +90,7 @@ ACTION_MODE = "continuous"   # "continuous" | "discrete"
 # Hard frequency band of the pulse train (you set these). pulse_period_ms is
 # bounded to [1000 / MAX_FREQ_HZ, 1000 / MIN_FREQ_HZ]; the agent can never pick a
 # period shorter than 1000/MAX_FREQ_HZ, so MAX_FREQ_HZ is a structural safety cap.
-MAX_FREQ_HZ = 30        # max instantaneous pulse rate (the safety cap)
+MAX_FREQ_HZ = 50        # max instantaneous pulse rate (the safety cap)
 MIN_FREQ_HZ = 5          # min rate (longest gap); lower => allows longer silences
 INTERVAL_MAP = "frequency"   # "frequency" (even Hz coverage) | "period" (even ms)
 
@@ -111,7 +111,7 @@ ACTION_SPACE = {
 # stimulation engages. Warmup steps are discarded from training/eval.
 # ===========================================================================
 
-WARMUP_S = 0.25
+WARMUP_S = 0.5
 CONTROL_S = 1.0
 METRIC_WINDOW_S = 0.25   # rolling window (s) for obs/reward. Tunable: shorter =>
                          # more responsive control + noisier metrics (the window
@@ -161,33 +161,43 @@ VECNORM = {
     "clip_obs": 10.0,       # clip normalized obs to +/- this many std
 }
 
-# Smooth (exponential) reward. Each metric term is a smooth bump peaking at its
-# target, giving PPO/SAC a usable gradient everywhere (unlike the old banded step
-# reward). For dist = |value - target| and a per-term "scale" (width):
-#     shape "gauss"   -> exp(-(dist / scale)**2)     (in (0, 1], peak 1 at target)
-#     shape "laplace" -> exp(-dist / scale)          (in (0, 1], peak 1 at target)
+# Monotonic reward for the project objective:
+#   - minimise STN synchrony R
+#   - maximise STN spectral entropy H
+#   - keep stimulation energy/charge low
 #
-# SELECTABLE OBJECTIVES: each metric term has its own "enabled" flag AND weight
-# "w". Turn a metric OFF for the reward by setting enabled=False (or w=0); it is
-# then ignored entirely (it can still be observed/logged). "scale" sets how
-# tolerant the bump is: smaller => sharper peak (must sit near target),
-# larger => broader credit. beta is on a dB scale so its scale is larger.
-#
-# A per-pulse energy penalty is always subtracted: -w_charge*lambda_charge*|q|.
+# reward = (w_entropy * H) - (w_sync * R) - (lambda_charge * |charge|)
+#          - bad_state_penalty, when R is high and H is low
+# beta is logged/observed but not used by default.
 REWARD = {
-    "shape": "gauss",          # "gauss" | "laplace"
-    # metric -> {enabled, target, scale, w}. Disable any by enabled=False or w=0.
-    "terms": {
-        "synchrony":  {"enabled": True,  "target": 0.25, "scale": 0.15, "w": 2.0},
-        "beta_power": {"enabled": False, "target": 75.0, "scale": 8.0,  "w": 1.0},
-        "entropy":    {"enabled": True,  "target": 0.70, "scale": 0.15, "w": 1.0},
+    "mode": "linear",
+    "w_sync": 2.0,
+    "w_entropy": 1.0,
+    "w_beta": 0.0,
+    "lambda_charge": 0.005,
+    "bad_state": {
+        "enabled": True,
+        "sync_threshold": 0.5,
+        "entropy_threshold": 0.5,
+        "penalty": 1.0,
     },
-    # energy cost: penalty = -w_charge * lambda_charge * |charge|.
-    # w_charge is the on/off toggle (default 1.0); lambda_charge sets the scale so
-    # the term is balanced against the (0, 1] metric bumps (charge ~ 40 / pulse,
-    # so lambda_charge ~ 0.01 => ~0.4 per pulse). Set w_charge=0 to disable.
-    "w_charge": 1.0, "lambda_charge": 0.01,
 }
+
+# Previous target-bump reward, kept here for reference.
+# REWARD = {
+#     "shape": "gauss",          # "gauss" | "laplace"
+#     # metric -> {enabled, target, scale, w}. Disable any by enabled=False or w=0.
+#     "terms": {
+#         "synchrony":  {"enabled": True,  "target": 0.25, "scale": 0.15, "w": 2.0},
+#         "beta_power": {"enabled": False, "target": 75.0, "scale": 8.0,  "w": 1.0},
+#         "entropy":    {"enabled": True,  "target": 0.70, "scale": 0.15, "w": 1.0},
+#     },
+#     # energy cost: penalty = -w_charge * lambda_charge * |charge|.
+#     # w_charge is the on/off toggle (default 1.0); lambda_charge sets the scale so
+#     # the term is balanced against the (0, 1] metric bumps (charge ~ 40 / pulse,
+#     # so lambda_charge ~ 0.01 => ~0.4 per pulse). Set w_charge=0 to disable.
+#     "w_charge": 1.0, "lambda_charge": 0.01,
+# }
 
 
 # ===========================================================================
@@ -206,7 +216,7 @@ REWARD = {
 # NOTE: SAC and TD3 require ACTION_MODE == "continuous" (train.py asserts this).
 # Override at the CLI with `--algo {ppo,sac,td3}`.
 # ===========================================================================
-ALGO = "ppo"   # "ppo" | "sac" | "td3"
+ALGO = "sac"   # "ppo" | "sac" | "td3"
 
 
 # ===========================================================================
@@ -216,12 +226,12 @@ ALGO = "ppo"   # "ppo" | "sac" | "td3"
 #   merged into the logged config (see wandb_config()).
 # ===========================================================================
 WANDB = {
-    "project": "RL controller",
-    "run_name": "Run 1",
+    "project": "RL DBS",
+    "run_name": "Run 1 SAC",
     "entity": None,
     "mode": "online",
     "sync_tensorboard": True,
-    "tags": ["ppo", "stn-gpe", "dbs"],
+    "tags": ["sac", "stn-gpe", "dbs"],
 }
 
 

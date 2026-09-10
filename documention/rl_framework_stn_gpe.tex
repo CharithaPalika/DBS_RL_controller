@@ -1,0 +1,371 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\title{Reinforcement Learning Framework for Adaptive DBS in the STN-GPe System}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Goal}
+
+The goal is to train an adaptive deep brain stimulation (DBS) controller for the
+STN-GPe spiking network. The controller should:
+
+\begin{itemize}[nosep]
+    \item reduce synchrony in the STN network,
+    \item increase spectral entropy of the STN local field potential (LFP),
+    \item use low stimulation energy.
+\end{itemize}
+
+In simple terms, the controller should push the Parkinsonian network away from a
+highly synchronized, low-entropy state while avoiding unnecessary stimulation.
+
+\section{STN-GPe System}
+
+The simulator is a two-population spiking model with STN and GPe neurons. The
+network evolves at a small integration time step:
+
+\[
+\Delta t = 0.1 \text{ ms}.
+\]
+
+The original simulator runs a full simulation in one call. For reinforcement
+learning, we use a steppable wrapper. This wrapper keeps the simulator state in
+memory and advances the model only for the biological time selected by the
+agent.
+
+\section{MDP Definition}
+
+We model the control problem as a Markov decision process (MDP):
+
+\[
+\mathcal{M} = (\mathcal{S}, \mathcal{A}, P, r, \gamma).
+\]
+
+At each decision step \(t\), the agent observes a state \(s_t\), chooses an
+action \(a_t\), receives a reward \(r_t\), and the simulator moves to the next
+state \(s_{t+1}\):
+
+\[
+s_t \xrightarrow{a_t} s_{t+1}, \qquad r_t = r(s_t, a_t, s_{t+1}).
+\]
+
+Because the agent chooses the time until the next pulse, one RL step can span a
+variable amount of biological time. This is closer to a semi-MDP, but we still
+use the standard Gymnasium interface:
+
+\[
+(s_{t+1}, r_t, \text{done}, \text{info}) = \text{env.step}(a_t).
+\]
+
+\subsection{State}
+
+The environment state is built from recent STN network metrics over a rolling
+window. The observation is:
+
+\[
+s_t =
+\begin{bmatrix}
+R_t \\
+B_t \\
+H_t \\
+\bar{a}_{t-1}
+\end{bmatrix}.
+\]
+
+Here:
+
+\begin{itemize}[nosep]
+    \item \(R_t\) is STN synchrony. Lower is better.
+    \item \(B_t\) is beta-band power. It is observed and logged, but it is not
+    used in the current reward by default.
+    \item \(H_t\) is spectral entropy of the STN LFP. Higher is better.
+    \item \(\bar{a}_{t-1}\) is the previous action, normalized to the range
+    \([0, 1]\). This helps the policy know what stimulation was recently used.
+\end{itemize}
+
+The current metric window is:
+
+\[
+T_{\text{window}} = 0.25 \text{ s}.
+\]
+
+With \(\Delta t = 0.1\) ms, this is:
+
+\[
+2500 \text{ simulator steps}.
+\]
+
+\subsection{Action}
+
+The current action space is continuous. The agent controls:
+
+\[
+a_t =
+\begin{bmatrix}
+A_t \\
+T_t
+\end{bmatrix},
+\]
+
+where:
+
+\begin{itemize}[nosep]
+    \item \(A_t\) is the DBS pulse amplitude.
+    \item \(T_t\) is the pulse period, meaning the time from this pulse to the
+    next pulse.
+\end{itemize}
+
+The current amplitude range is:
+
+\[
+A_t \in [0, 200].
+\]
+
+The current frequency range is:
+
+\[
+f_t \in [5, 50] \text{ Hz}.
+\]
+
+Therefore the pulse period is bounded by:
+
+\[
+T_t = \frac{1000}{f_t} \text{ ms},
+\]
+
+so:
+
+\[
+T_t \in [20, 200] \text{ ms}.
+\]
+
+Each action emits one charge-balanced biphasic pulse:
+
+\[
+I_{\text{DBS}}(t) =
+\begin{cases}
++A_t, & \text{positive phase}, \\
+0, & \text{interphase gap}, \\
+-A_t, & \text{negative phase}.
+\end{cases}
+\]
+
+The current phase shape is fixed:
+
+\[
+\text{phase width} = 0.2 \text{ ms}, \qquad
+\text{interphase gap} = 1.0 \text{ ms}.
+\]
+
+Only amplitude and pulse period are controlled by the agent at the moment.
+
+\subsection{Transition}
+
+After the agent chooses \(a_t\), the environment:
+
+\begin{enumerate}[nosep]
+    \item creates one biphasic DBS pulse using \(A_t\),
+    \item inserts that pulse at the start of the decision window,
+    \item advances the STN-GPe simulator for \(T_t\) ms,
+    \item recomputes the rolling network metrics,
+    \item returns the next state \(s_{t+1}\).
+\end{enumerate}
+
+Mathematically, the transition is:
+
+\[
+s_{t+1} = P(s_t, a_t),
+\]
+
+where \(P\) is the STN-GPe simulator dynamics plus the DBS input.
+
+\section{Reward Function}
+
+The current reward is designed to match the project objective directly:
+
+\[
+r_t = w_H H_t - w_R R_t - \lambda_q q_t - p_t.
+\]
+
+The current weights are:
+
+\[
+w_H = 1.0, \qquad w_R = 2.0, \qquad \lambda_q = 0.005.
+\]
+
+Here:
+
+\begin{itemize}[nosep]
+    \item \(H_t\) is spectral entropy, so higher entropy increases reward.
+    \item \(R_t\) is synchrony, so higher synchrony decreases reward.
+    \item \(q_t\) is absolute stimulation charge, so more energy decreases
+    reward.
+    \item \(p_t\) is an extra bad-state penalty.
+\end{itemize}
+
+The charge term is computed using absolute current:
+
+\[
+q_t = \sum_k |I_{\text{DBS}}[k]| \Delta t.
+\]
+
+Even though the biphasic pulse has net zero charge, we still penalize absolute
+charge because both phases consume stimulation energy.
+
+\subsection{Bad-State Penalty}
+
+We add an extra penalty when the network is clearly in a bad state:
+
+\[
+p_t =
+\begin{cases}
+1.0, & R_t > 0.5 \text{ and } H_t < 0.5, \\
+0, & \text{otherwise}.
+\end{cases}
+\]
+
+Therefore the reward becomes:
+
+\[
+r_t =
+H_t - 2R_t - 0.005q_t
+- \mathbb{I}(R_t > 0.5 \ \text{and}\ H_t < 0.5).
+\]
+
+This means the agent receives a stronger penalty when synchrony is high and
+entropy is low at the same time.
+
+\section{Episode Structure}
+
+Each episode has two parts.
+
+\subsection{Warmup}
+
+The network first runs without stimulation:
+
+\[
+T_{\text{warmup}} = 0.25 \text{ s}.
+\]
+
+This lets the network settle and fills the rolling metric buffer. Warmup steps
+are not counted as RL reward steps.
+
+\subsection{Control Period}
+
+After warmup, the agent controls the DBS pulses:
+
+\[
+T_{\text{control}} = 1.0 \text{ s}.
+\]
+
+Because the agent can choose periods between 20 ms and 200 ms, the number of RL
+decisions per episode is approximately:
+
+\[
+5 \leq N_{\text{decisions}} \leq 50.
+\]
+
+\section{Return and Best Model}
+
+The return of an episode is the sum of rewards:
+
+\[
+G = \sum_{t=0}^{T-1} r_t.
+\]
+
+During training, evaluation is run every fixed number of environment steps. The
+best model is the one with the highest mean evaluation return:
+
+\[
+\text{score} =
+\frac{1}{N_{\text{eval}}}
+\sum_{i=1}^{N_{\text{eval}}} G_i.
+\]
+
+The current evaluation setting uses:
+
+\[
+N_{\text{eval}} = 3.
+\]
+
+So the saved best model is not selected from synchrony alone or entropy alone.
+It is selected using the combined scalar reward, which includes entropy,
+synchrony, charge, and the bad-state penalty.
+
+\section{Algorithms}
+
+The code supports three Stable-Baselines3 algorithms.
+
+\subsection{SAC}
+
+Soft Actor-Critic (SAC) is the current recommended algorithm. It is useful here
+because:
+
+\begin{itemize}[nosep]
+    \item the action space is continuous,
+    \item the simulator is expensive,
+    \item SAC is off-policy and can reuse past experience from a replay buffer,
+    \item SAC encourages exploration through an entropy term.
+\end{itemize}
+
+SAC learns a policy:
+
+\[
+a_t = \pi_\theta(s_t),
+\]
+
+and updates it to maximize expected return while maintaining exploration.
+
+\subsection{PPO}
+
+Proximal Policy Optimization (PPO) is also supported. PPO is an on-policy
+method. It is usually stable, but it can require more simulator samples because
+it does not reuse old data as directly as SAC.
+
+\subsection{TD3}
+
+Twin Delayed Deep Deterministic Policy Gradient (TD3) is also supported for
+continuous control. It uses deterministic actions plus exploration noise. It may
+work, but SAC is usually a better first choice for this system because SAC has
+stronger built-in exploration.
+
+\section{Files in the Codebase}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{rl\_stn\_gpe/env.py} & Gymnasium environment for STN-GPe control \\
+\texttt{rl\_stn\_gpe/reward.py} & Reward calculation \\
+\texttt{rl\_stn\_gpe/config.py} & Action space, timing, reward, algorithm choice \\
+\texttt{rl\_stn\_gpe/stepper.py} & Steppable wrapper around the simulator \\
+\texttt{rl\_stn\_gpe/train.py} & Training script \\
+\texttt{rl\_stn\_gpe/eval.py} & Evaluation and plotting script \\
+\texttt{rl\_stn\_gpe/hparams/sac.py} & SAC hyperparameters \\
+\texttt{rl\_stn\_gpe/hparams/ppo.py} & PPO hyperparameters \\
+\texttt{rl\_stn\_gpe/hparams/td3.py} & TD3 hyperparameters \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Summary}
+
+The RL controller observes STN network metrics, chooses adaptive DBS pulse
+amplitude and timing, and receives reward for lowering synchrony, increasing
+entropy, and using less stimulation. SAC is the main algorithm because the
+control problem is continuous and simulator samples are expensive. The best
+model is saved based on the highest mean evaluation return under the current
+reward function.
+
+\end{document}
